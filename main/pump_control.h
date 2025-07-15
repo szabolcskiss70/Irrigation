@@ -31,6 +31,7 @@ typedef struct{
 	pcnt_unit_handle_t pcnt_unit;
     int daily_pump_volume;
     int prev_daily_pump_volume;
+	time_t status_change_time[sizeof(T_pump_states)];
 } T_pump; 
 
 //extern T_pump pump[2];
@@ -53,5 +54,7 @@ bool getPUMP_prio(int id);
 void setPUMP_prio(int id, bool val);
 bool getPUMP_switchbackifavailable(int id);
 void setPUMP_switchbackifavailable(int id, bool val);
+void switch_pump_id_to_state(int id, T_pump_states new_state);
+
 
 #endif

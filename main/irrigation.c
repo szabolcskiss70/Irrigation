@@ -148,7 +148,7 @@ typedef bool T_MQTT_Sub_Callback(char* ltopic, char* ldata, bool MQTT,char wilca
 
 
 #define BROKER_URL "mqtt://szabolcskiss.ddns.net:1883"
-char *maintopic="IRRIGATION";
+char *maintopic="IRRIGATION2";
 
 
 const esp_app_desc_t *app_desc;
@@ -171,7 +171,7 @@ void read_ACS71020_register2(int reg_addr,long value);
 #define num_states 15
 typedef enum {MAN_ON,PROG_STARTED,MAN_RESUMED,PROG_RESUMED,INIT,ENABLED,DISABLED,MAN_OFF,SUSPENDED,DELAY,PROG_FINISHED,PROG_END,IDLE,REBOOTED,NOREQUEST} T_states;
 char* str_states[num_states]={"MAN_ON","PROG_STARTED","MAN_RESUMED","PROG_RESUMED","INIT","ENABLED","DISABLED","MAN_OFF","SUSPENDED","DELAY","PROG_FINISHED","PROG_END","IDLE","REBOOTED","NOREQUEST"};
-char* str_short_states[num_states]={"M_ON","P_START","RESUMED","RESUMED","INIT","ENABLED","DIS","M_OFF","SUSP","DELAY","FINISH","PROG_END","IDLE","REBOOTED","NO_REQ"};
+char* str_short_states[num_states]={"ON_M","START_P","RES_M","RES_P","INIT","ENAB","DIS","OFF_M","SUSP","DELAY","FIN","END_P","IDLE","REBO","NO_REQ"};
 typedef enum {OFF,LEVEL,POWER,CT,STACK,LOG,VOLUME} T_measure_mode;
 typedef enum {USE_BLE,USE_WIFI,MAIN_TASK,POWERMETER_TASK,TEMPSENSOR,CURRENTSENSOR,MEASURE_LEVEL,MEASURE_POWER} T_run_mode_bits;
 int run_mode=(1<<USE_BLE) | (1<<USE_WIFI);
@@ -722,7 +722,7 @@ time_t sec_in_day()
 void Publish_ontime(int ch) 
 {
 	char message[32];	
-	sprintf(message,"%llds  %1.0fl",channels[ch].on_time+is_channel_active(ch)?sec_in_day()-channels[ch].last_switch_on_time:0,1.0*channels[ch].daily_volume/YF_DN32_PULSE_PER_LITER);
+	sprintf(message,"%llds  %1.0fl",channels[ch].on_time+is_channel_active(ch)?(sec_in_day()-channels[ch].last_switch_on_time):0,1.0*channels[ch].daily_volume/YF_DN32_PULSE_PER_LITER);
 			 
 			
 	 if(mqtt_connected)
@@ -961,17 +961,13 @@ bool PUMP_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
     else if ((strlen(wilcarded_topic[1])==1) && (sscanf(wilcarded_topic[1],"%d",&ch)==1) && (ch>=1) && (ch<=2))
 	{
 		ch--;
-		if(strcmp(ldata,"ON")==0) switch_pump_ch(ch,true);
-		else if (strcmp(ldata,"DISABLE")==0) 
-		 {
-			switch_pump_ch(ch,false);
-			enable_pump(ch,false);
-		 }
+		if(strcmp(ldata,"ON")==0) switch_pump_id_to_state(ch,P_ON);
+		else if (strcmp(ldata,"DISABLE")==0) enable_pump(ch,false);
 		else if (strcmp(ldata,"ENABLE")==0) enable_pump(ch,true);
 		else if (strcmp(ldata,"SET_PRIO")==0) setPUMP_prio(ch,true);
 		else if (strcmp(ldata,"SET_SWITCHBACK")==0) setPUMP_switchbackifavailable(ch,true);
 		else if (strcmp(ldata,"DEL_SWITCHBACK")==0) setPUMP_switchbackifavailable(ch,false);
-        else switch_pump_ch(ch,false);
+        else switch_pump_id_to_state(ch,P_OFF);
 
 		PUMP___CB(ltopic,  ldata,  MQTT,wilcarded_topic);
     }
@@ -1122,7 +1118,7 @@ bool CHANNEL_schedule_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_top
 		return false;
 	 }
 			if (strstr(ltopic,"/SCHEDULE/?")!=NULL) report_scheduling(ch);	
-			else if (sscanf(wilcarded_topic[0],"period%d",&period)==1)
+			else if (sscanf(wilcarded_topic[0],"PERIOD%d",&period)==1)
 			{
 			 int HH_on,MM_on,HH_off,MM_off;
 			 char weekdays[7];
@@ -3289,9 +3285,7 @@ void app_main()
     if (run_mode & (1<<USE_BLE)) init_BLE();
 
 	Load_data_from_NVS();
-
-
-
+    Mount_Filesystem("user_fs");
 	/*
 	 gpio_config_t io_conf;
     //disable interrupt
@@ -3453,6 +3447,3 @@ void app_main()
 
 
 }
-
-
-

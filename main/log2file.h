@@ -18,6 +18,7 @@
 static const char *LOG_FILE = "/spiflash/log.txt";
 static const char *IRR_FILE = "/spiflash/irr.txt";
 
+wl_handle_t Mount_Filesystem(char* partition_name);
 void read_log(const char* filename);
 void append_log(const char* filename,const char *format, ...);
 long getfilesize(const char *filename);
