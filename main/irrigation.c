@@ -148,7 +148,7 @@ typedef bool T_MQTT_Sub_Callback(char* ltopic, char* ldata, bool MQTT,char wilca
 
 
 #define BROKER_URL "mqtt://szabolcskiss.ddns.net:1883"
-char *maintopic="IRRIGATION2";
+char *maintopic="IRRIGATION";
 
 
 const esp_app_desc_t *app_desc;
@@ -1290,6 +1290,8 @@ bool CHANNEL_request_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topi
 			     else channels[ch].manual_change_request=NOREQUEST;
 				 if(channels[ch].manual_change_request==ENABLED) {channels[ch].channel_disabled=0;Save_data_to_NVS();}
 				 else if (channels[ch].manual_change_request==DISABLED) {channels[ch].channel_disabled=1;Save_data_to_NVS();}
+				 else if(strcmp(ldata,"VALVE ON")==0) writeDO(channels[ch].Valve_GPIO_OUTPUT, true);
+				 else if(strcmp(ldata,"VALVE OFF")==0) writeDO(channels[ch].Valve_GPIO_OUTPUT, false);
 				 
 				}
 				sprintf(MQTT_BLE_answer,"%s {%s}", ltopic,str_states[channels[ch].channel_state]);  					 
