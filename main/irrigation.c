@@ -228,7 +228,7 @@ const int DS_PIN = 17; //GPIO where you connected ds18b20
 #define PRG_BUTTON 0
 
 
-//#define GPIO_OUTPUT_PIN_SEL  (1ULL<<GPIO_OUTPUT_PUMP_1 | 1ULL<<GPIO_OUTPUT_OUT_2 | 1ULL<<GPIO_OUTPUT_OUT_3 | 1ULL<<GPIO_OUTPUT_OUT_4 | 1ULL<<GPIO_Vext)
+#define GPIO_OUTPUT_PIN_SEL  (1ULL<<GPIO_OUTPUT_PUMP_1 | 1ULL<<GPIO_OUTPUT_OUT_2 | 1ULL<<GPIO_OUTPUT_OUT_3 | 1ULL<<GPIO_OUTPUT_OUT_4 | 1ULL<<GPIO_Vext)
 //#define GPIO_INPUT_PIN_SEL (1ULL<<ISOLATED_INPUT_PUMP_1 | 1ULL<<ISOLATED_INPUT_2)
 
 
@@ -3288,7 +3288,7 @@ void app_main()
 
 	Load_data_from_NVS();
     Mount_Filesystem("user_fs");
-	/*
+	
 	 gpio_config_t io_conf;
     //disable interrupt
     io_conf.intr_type = GPIO_INTR_DISABLE;
@@ -3304,6 +3304,7 @@ void app_main()
     gpio_config(&io_conf);
 	
 	
+	/*
 	
 	//interrupt of rising edge
     io_conf.intr_type = GPIO_INTR_DISABLE;
