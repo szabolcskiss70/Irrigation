@@ -1122,7 +1122,7 @@ bool CHANNEL_schedule_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_top
 		return false;
 	 }
 			if (strstr(ltopic,"/SCHEDULE/?")!=NULL) report_scheduling(ch);	
-			else if (sscanf(wilcarded_topic[0],"period%d",&period)==1)
+			else if (sscanf(wilcarded_topic[0],"PERIOD%d",&period)==1)
 			{
 			 int HH_on,MM_on,HH_off,MM_off;
 			 char weekdays[7];
