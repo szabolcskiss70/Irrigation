@@ -2609,7 +2609,7 @@ esp_err_t my_esp_https_ota(const esp_http_client_config_t *config)
         sprintf(MQTT_BLE_answer,"Image project name:%s",new_app_info.project_name); 
 		if(mqtt_connected)
 		{
-	     my_esp_mqtt_client_publish(mqtt_client, "OTA/INFO", message, 0, 0, 0);   //Qos=1; retain=0
+	     my_esp_mqtt_client_publish(mqtt_client, "OTA/INFO", MQTT_BLE_answer, 0, 0, 0);   //Qos=1; retain=0
          vTaskDelay(3*1000 / portTICK_PERIOD_MS);
 		}
    
