@@ -3518,4 +3518,16 @@ void app_main()
     }
 
 
+
+
+	if(mqtt_connected) 
+	   {	
+			  char message[64];  
+			  char timeStr[32];           
+			  time(&now_life_sent);
+			  sprintf(timeStr,"%2.2d:%2.2d:%2.2d",(int)((now_life_sent)/3600),(int)(((now_life_sent)%3600)/60),(int)((now_life_sent)%60)); 
+	
+			  sprintf(message,"%lld:%s",now_life_sent,timeStr);   
+			  my_esp_mqtt_client_publish(mqtt_client, "LIFE", message, 0, 0, 1);   //Qos=0; retain=1
+	   }
 }
