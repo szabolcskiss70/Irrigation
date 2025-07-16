@@ -361,6 +361,7 @@ typedef struct{
     T_states channel_state; //=INIT;
 	time_t status_change_time[num_states];
     T_states manual_change_request;  //=NOREQUEST;	
+	int requested_ontime;
 	bool fix_preassure;
 } T_channel;
 T_channel channels[CHANNEL_NUM];
@@ -385,6 +386,7 @@ void init_channel(int ch, char* name, int GPIO, bool fix_preassure)
 	channels[ch].fix_preassure=fix_preassure;
 	set_DIO_direction(GPIO,GPIO_MODE_OUTPUT);
 	for(int i=0; i<num_states;i++) channels[ch].status_change_time[i]=-1;
+	channels[ch].requested_ontime=300; //[s]
 }
 
 
@@ -1482,7 +1484,8 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 
 			 if(mqtt_connected)
 			 {		 
-			  msg_id = my_esp_mqtt_client_publish(mqtt_client, "FIRMWARE/RUNNING_VERSION", app_desc->version, 0, 0, 1);   //Qos=1; retain=1
+			  sprintf(MQTT_BLE_answer,"%s run_mode=%d",app_desc->version,run_mode);
+			  msg_id = my_esp_mqtt_client_publish(mqtt_client, "FIRMWARE/RUNNING_VERSION",MQTT_BLE_answer, 0, 0, 1);   //Qos=1; retain=1
 			  ESP_LOGI(TAG, "publish successful, msg_id=%d", msg_id);
 			  
 			   msg_id = my_esp_mqtt_client_publish(mqtt_client, "FIRMWARE/ROLLBACK", "", 0, 0, 0);   //Qos=1; retain=0
@@ -2149,6 +2152,8 @@ void mainTask(void *pvParameters){
 		channels[ch].manual_change_request=NOREQUEST;
 	 }
 	}	
+
+
 	     
 	
 	if((FW_update_available) && strlen(OTA_SOURCE_URL))
@@ -2215,6 +2220,16 @@ void mainTask(void *pvParameters){
 	 prevhour=hour;
 	}
 	
+	for(ch=0;ch<CHANNEL_NUM;ch++) //manual switches
+	{		
+     if(channels[ch].channel_state==MAN_ON)
+	 {
+		if (now-channels[ch].last_switch_on_time>channels[ch].requested_ontime)  switch_channel(ch,MAN_OFF);
+	 }
+	}
+
+
+
 	
     if (run_mode & (1<<TEMPSENSOR)) temperature=ds18b20_get_temp();
    
