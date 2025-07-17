@@ -922,7 +922,7 @@ bool DEBUG_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 	 append_log(LOG_FILE,"New log");
 	 strcpy(MQTT_BLE_answer,"LOG erased");
 	}
-	else if ((sscanf(ldata,"%d",&log_level)==1) &&  (log_level<=5) &&  (log_level>=0)) 
+	else if ((sscanf(ldata,"LEVEL %d",&log_level)==1) &&  (log_level<=5) &&  (log_level>=0)) 
 	{
 		esp_log_level_set("*", log_level);
 		sprintf(MQTT_BLE_answer,"log level=%d",log_level);
@@ -1371,11 +1371,12 @@ bool CHANNEL_request_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topi
 				 {
 				  if(strcmp(ldata,str_states[i])==0) break;
 				 }
-				 if (i<num_states) channels[ch].manual_change_request=i; 
-				 else if(strcmp(ldata,"ON")==0) channels[ch].manual_change_request=MAN_ON;
+				 if (i<num_states) {channels[ch].manual_change_request=i; channels[ch].requested_ontime=30;} 
+				 else if(strcmp(ldata,"ON")==0) {channels[ch].requested_ontime=30;channels[ch].manual_change_request=MAN_ON;}
 				 else if((sscanf(ldata,"ON %d%c",&channels[ch].requested_ontime,&unit)==2) && (unit=='m')) channels[ch].manual_change_request=MAN_ON;
 				 else if(strcmp(ldata,"OFF")==0) channels[ch].manual_change_request=MAN_OFF;
 			     else channels[ch].manual_change_request=NOREQUEST;
+
 				 if(channels[ch].manual_change_request==ENABLED) {channels[ch].channel_disabled=0;Save_data_to_NVS();}
 				 else if (channels[ch].manual_change_request==DISABLED) {channels[ch].channel_disabled=1;Save_data_to_NVS();}
 				 else if(strcmp(ldata,"VALVE ON")==0) writeDO(channels[ch].Valve_GPIO_OUTPUT, true);
@@ -1748,12 +1749,10 @@ void switch_channel(int ch, T_states status)
 					}
 	 }
 
-	channels[ch].status_change_time[status]=now;	
-	channels[ch].channel_state=status;		   
-    switch_channel_relays(ch,new_relay_status);
+	
 	 
 	 if(new_relay_status) {if (!is_channel_active(ch)) {channels[ch].last_switch_on_time=now;channels[ch].period_volume=0;}} // from OFF to ON
-	else if (is_channel_active(ch)) if (channels[ch].last_switch_on_time!=-1) {channels[ch].period_ontime+=now-channels[ch].last_switch_on_time;} //from ON to OFF
+	else if (is_channel_active(ch))  {channels[ch].period_ontime+=now-channels[ch].last_switch_on_time;} //from ON to OFF
 	
 
 
@@ -1768,7 +1767,9 @@ void switch_channel(int ch, T_states status)
 	  
 				}
 
-
+     channels[ch].status_change_time[status]=now;	
+	 channels[ch].channel_state=status;		   
+     switch_channel_relays(ch,new_relay_status);
 				
 				if(mqtt_connected)
 				{	
@@ -2233,14 +2234,7 @@ void mainTask(void *pvParameters){
 		
 	  }
  			
-    for(ch=0;ch<CHANNEL_NUM;ch++) //manual switches
-	{		
-     if(mqtt_connected && (channels[ch].manual_change_request!=NOREQUEST))
-	 {
-		switch_channel(ch,channels[ch].manual_change_request);
-		channels[ch].manual_change_request=NOREQUEST;
-	 }
-	}	
+ 	
 
 
 	     
@@ -2312,15 +2306,22 @@ void mainTask(void *pvParameters){
 	 prevhour=hour;
 	}
 	
-	for(ch=0;ch<CHANNEL_NUM;ch++) //manual switches
+	for(ch=0;ch<CHANNEL_NUM;ch++) //auto switch off of manually on channels
 	{		
      if(channels[ch].channel_state==MAN_ON)
 	 {
-		if (now-channels[ch].last_switch_on_time>channels[ch].requested_ontime*60)  switch_channel(ch,MAN_OFF);
+		if ((now-channels[ch].last_switch_on_time)>(channels[ch].requested_ontime*60))  switch_channel(ch,MAN_OFF);
 	 }
 	}
 
-
+    for(ch=0;ch<CHANNEL_NUM;ch++) //manual switches
+	{		
+     if (channels[ch].manual_change_request!=NOREQUEST)
+	 {
+		switch_channel(ch,channels[ch].manual_change_request);
+		channels[ch].manual_change_request=NOREQUEST;
+	 }
+	}
 
 	
     if (run_mode & (1<<TEMPSENSOR)) temperature=ds18b20_get_temp();

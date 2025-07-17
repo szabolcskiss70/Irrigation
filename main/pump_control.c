@@ -276,7 +276,7 @@ void getpumptimechanges(int id, char* message, int buf_size)
 {
 			for (int i=0;i<sizeof(T_pump_states);i++)
 			{
-				if (buf_size>64) sprintf(message,"ID:%d %s: %lld\n",id,PUMP_status_str[i],pump[id].status_change_time[i]);
+				if (buf_size>64) sprintf(message+strlen(message),"ID:%d %s: %lld\n",id,PUMP_status_str[i],pump[id].status_change_time[i]);
 			}
 }
 
