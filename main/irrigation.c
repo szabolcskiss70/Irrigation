@@ -447,7 +447,7 @@ void to_lower(const char *str, char *out_str)
    int msg_id;
    char* full_topicname=calloc(1,strlen(maintopic)+1+strlen(subtopic)+1);
    sprintf(full_topicname,"%s/%s",maintopic,subtopic);
-   printf("Full_topic_name=%s\n",full_topicname);
+   //printf("Full_topic_name=%s\n",full_topicname);
    msg_id=esp_mqtt_client_subscribe(client, full_topicname, par); 
    /*to_lower(subtopic,subtopic);
    sprintf(full_topicname,"%s/%s",maintopic,subtopic);
@@ -3466,7 +3466,7 @@ void app_main()
     if (run_mode & (1<<USE_BLE)) init_BLE();
 
 	Load_data_from_NVS();
-    Mount_Filesystem("user_fs");
+    Mount_my_Filesystem("user_fs");
 
 	
 	 gpio_config_t io_conf;

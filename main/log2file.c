@@ -187,6 +187,18 @@ void clean_dir(const char *path)
 }
 
 
+void Mount_my_Filesystem(char *partition)
+{
+  static bool FSmounted=false;
+  if (!FSmounted)  
+   {
+    wl_handle =Mount_Filesystem(partition); 
+    FSmounted=true; 
+   }  
+}
+
+
+
 
 void append_log(const char* filename,const char *format, ...)
 {
@@ -204,7 +216,7 @@ void append_log(const char* filename,const char *format, ...)
   va_start (arg, format);
   done = vsprintf (buffer+strlen(buffer), format, arg);
   va_end (arg);
-  if (wl_handle==WL_INVALID_HANDLE) wl_handle =Mount_Filesystem("user_fs");
+  Mount_my_Filesystem("user_fs");
   int handle = open(filename, O_RDWR |O_CREAT| O_APPEND , 0);
   Write2File(handle,buffer);
   close(handle);
@@ -215,7 +227,7 @@ void append_log(const char* filename,const char *format, ...)
 void read_log(const char* filename)
 {
 char buf[128] = {0};    
-if (wl_handle==WL_INVALID_HANDLE) wl_handle =Mount_Filesystem("user_fs");
+Mount_my_Filesystem("user_fs");
 int handle2=open(filename, O_RDONLY , 0);
 int readed=ReadFromFile(handle2,buf,sizeof(buf)-1);
 close(handle2);
