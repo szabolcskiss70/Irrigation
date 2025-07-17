@@ -22,5 +22,6 @@ wl_handle_t Mount_Filesystem(char* partition_name);
 void read_log(const char* filename);
 void append_log(const char* filename,const char *format, ...);
 long getfilesize(const char *filename);
+int OpenFile(const char *filename);
 
 #endif

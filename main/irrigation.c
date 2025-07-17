@@ -857,8 +857,81 @@ bool LIFE_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 
 				 }
 				}
+				MQTT_BLE_answer[0]=0;
 				return true;
 }
+
+FILE *_log_remote_fp=NULL;
+// This function will be called by the ESP log library every time ESP_LOG needs to be performed.
+//      @important Do NOT use the ESP_LOG* macro's in this function ELSE recursive loop and stack overflow! So use printf() instead for debug messages.
+int _log_vprintf(const char *fmt, va_list args) {
+    static bool static_fatal_error = false;
+    static const uint32_t WRITE_CACHE_CYCLE = 5;
+    static uint32_t counter_write = 0;
+    int iresult;
+
+    // #1 Write to SPIFFS
+    if (_log_remote_fp == NULL) {
+        printf("%s() ABORT. file handle _log_remote_fp is NULL\n", __FUNCTION__);
+        return -1;
+    }
+    if (static_fatal_error == false) {
+        iresult = vfprintf(_log_remote_fp, fmt, args);
+        if (iresult < 0) {
+            printf("%s() ABORT. failed vfprintf() -> disable future vfprintf(_log_remote_fp) \n", __FUNCTION__);
+            // MARK FATAL
+            static_fatal_error = true;
+            return iresult;
+        }
+
+        // #2 Smart commit after x writes
+        counter_write++;
+        if (counter_write % WRITE_CACHE_CYCLE == 0) {
+            /////printf("%s() fsync'ing log file on SPIFFS (WRITE_CACHE_CYCLE=%u)\n", WRITE_CACHE_CYCLE);
+            fsync(fileno(_log_remote_fp));
+        }
+    }
+
+    // #3 ALWAYS Write to stdout!
+    return vprintf(fmt, args);
+}
+
+
+bool DEBUG_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
+{
+	int log_level=0;
+	if (strcmp(ldata,"REDIRECT ON")==0)
+	{
+	  esp_log_level_set("*", ESP_LOG_ERROR);
+	  remove(LOG_FILE);
+	  append_log(LOG_FILE,"New log");
+	  _log_remote_fp=fopen(LOG_FILE,"w+");
+      esp_log_set_vprintf(&_log_vprintf);	
+	  strcpy(MQTT_BLE_answer,"Redirecting ON, loglevel=1");
+	}
+	else if (strcmp(ldata,"REDIRECT OFF")==0)
+	{
+	 esp_log_level_set("*", ESP_LOG_ERROR);	
+	 esp_log_set_vprintf(&vprintf);	
+	 if (_log_remote_fp!=NULL)  fclose(_log_remote_fp);
+	 strcpy(MQTT_BLE_answer,"Redirecting OFF, loglevel=1");
+	}
+	else if (strcmp(ldata,"ERASE_LOG")==0)
+	{
+	 remove(LOG_FILE);
+	 append_log(LOG_FILE,"New log");
+	 strcpy(MQTT_BLE_answer,"LOG erased");
+	}
+	else if ((sscanf(ldata,"%d",&log_level)==1) &&  (log_level<=5) &&  (log_level>=0)) 
+	{
+		esp_log_level_set("*", log_level);
+		sprintf(MQTT_BLE_answer,"log level=%d",log_level);
+	}
+	else  strcpy(MQTT_BLE_answer,"Invalid parameter!");
+	return true;
+}
+
+
 bool FIRMWARE_URL_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 {
                 ESP_LOGI(TAG, "Topic:%s",ltopic);
@@ -1424,8 +1497,8 @@ ACS71020/WRITE {0xhex_address=0xhex_value}";
 return true;
 }
 
-char* subscribe_topics[]=                   {"LIFE" ,"FIRMWARE/URL" ,"FIRMWARE/SELECT_URL" ,"FIRMWARE/VERSION" ,"FIRMWARE/ROLLBACK" ,"CHANNEL/+/REQUEST"      ,"CHANNEL/+/STATISTIC"      ,"CHANNEL/+/SCHEDULE/#"    ,"RESTART" ,"PUMP_RESTART_DELAY","MEASURE_MODE" ,"LEVEL/?" ,"TIME/?"  ,"ACS71020/READ" ,"ACS71020/WRITE" ,"TEMP/?" ,"HELP" ,"PUMP/+/REQUEST" ,"PUMP/?" ,"RUN_MODE" ,"RUN_MODE/?","LIST","CHANNEL/+/SET_NAME","CHANNEL/+/TIMES"};
-T_MQTT_Sub_Callback *MQTT_Sub_Callbacks[]=  {LIFE_CB,FIRMWARE_URL_CB,FIRMWARE_SELECT_URL_CB,FIRMWARE_VERSION_CB,FIRMWARE_ROLLBACK_CB,CHANNEL_request_CB,CHANNEL_statistic_CB,CHANNEL_schedule_CB,restart_CB,pump_restart_delay_CB,measure_mode_CB,LEVEL___CB,TIME___CB,ACS71020_read_CB,ACS71020_write_CB,temp___CB,help_CB,PUMP_CB,PUMP___CB,run_mode_CB,run_mode___CB,LIST_CB,CHANNEL_SET_NAME_CB,CHANNEL_TIMES_CB}; 
+char* subscribe_topics[]=                   {"LIFE" ,"FIRMWARE/URL" ,"FIRMWARE/SELECT_URL" ,"FIRMWARE/VERSION" ,"FIRMWARE/ROLLBACK" ,"CHANNEL/+/REQUEST"      ,"CHANNEL/+/STATISTIC"      ,"CHANNEL/+/SCHEDULE/#"    ,"RESTART" ,"PUMP_RESTART_DELAY","MEASURE_MODE" ,"LEVEL/?" ,"TIME/?"  ,"ACS71020/READ" ,"ACS71020/WRITE" ,"TEMP/?" ,"HELP" ,"PUMP/+/REQUEST" ,"PUMP/?" ,"RUN_MODE" ,"RUN_MODE/?","LIST","CHANNEL/+/SET_NAME","CHANNEL/+/TIMES","DEBUG"};
+T_MQTT_Sub_Callback *MQTT_Sub_Callbacks[]=  {LIFE_CB,FIRMWARE_URL_CB,FIRMWARE_SELECT_URL_CB,FIRMWARE_VERSION_CB,FIRMWARE_ROLLBACK_CB,CHANNEL_request_CB,CHANNEL_statistic_CB,CHANNEL_schedule_CB,restart_CB,pump_restart_delay_CB,measure_mode_CB,LEVEL___CB,TIME___CB,ACS71020_read_CB,ACS71020_write_CB,temp___CB,help_CB,PUMP_CB,PUMP___CB,run_mode_CB,run_mode___CB,LIST_CB,CHANNEL_SET_NAME_CB,CHANNEL_TIMES_CB,DEBUG_CB}; 
 
 
 bool Process_EVENT_DATA(char* ltopic, char* ldata, bool MQTT)
@@ -3337,6 +3410,9 @@ void init_BLE()
 
 
 
+
+
+
 void app_main()
 {
 
@@ -3352,12 +3428,12 @@ void app_main()
     ESP_LOGI(TAG, "Project name:     %s", app_desc->project_name);
     ESP_LOGI(TAG, "App version:      %s", app_desc->version);
 
-    esp_log_level_set("*", ESP_LOG_INFO);
-    esp_log_level_set("MQTT_CLIENT", ESP_LOG_VERBOSE);
+    esp_log_level_set("*", ESP_LOG_ERROR);
+    /*esp_log_level_set("MQTT_CLIENT", ESP_LOG_VERBOSE);
     esp_log_level_set("TRANSPORT_TCP", ESP_LOG_VERBOSE);
     esp_log_level_set("TRANSPORT_SSL", ESP_LOG_VERBOSE);
     esp_log_level_set("TRANSPORT", ESP_LOG_VERBOSE);
-    esp_log_level_set("OUTBOX", ESP_LOG_VERBOSE);
+    esp_log_level_set("OUTBOX", ESP_LOG_VERBOSE);*/
     // Initialize NVS.
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -3391,6 +3467,7 @@ void app_main()
 
 	Load_data_from_NVS();
     Mount_Filesystem("user_fs");
+
 	
 	 gpio_config_t io_conf;
     //disable interrupt
