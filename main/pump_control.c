@@ -15,7 +15,7 @@ char* PUMP_status_str[]={"DISABLED","SUSPENDED","DELAY","OFF","RESUMED","ON"};
 
 static const char *TAG = "pump";
 int pump_num=0;
-int running_pump=-1;
+int running_pump_ID=-1;
 
 time_t now_pump()
 {
@@ -69,14 +69,15 @@ void switch_pump_ch_relay(int id,bool on_state)
  
  if (on_state) 
  {
-  if (running_pump!=id)
+  if (running_pump_ID!=id)
   {//not running yet
    pcnt_unit_get_count(pump[id].pcnt_unit, &pump[id].cnt_at_pump_start);
 	 pump[id].last_pump_on_time=now_pump();
   }
  } 
-	running_pump=(on_state==true)?id:-1;
+	running_pump_ID=(on_state==true)?id:-1;
   writeDO(pump[id].GPIO_PUMP, (on_state==true)?1:0);	
+  pump[id].pump_running=on_state;
 }
 
 
@@ -105,6 +106,7 @@ void switch_pump_id_to_state(int id, T_pump_states new_state)
 void init_pump(int id, int GPIO_PUMP, int GPIO_PROT,int GPIO_CNT,bool prio, bool switchbackifavailable)
 {
 	pump[id].ID=id;
+  pump[id].pump_running=false;
 	pump[id].GPIO_PUMP=GPIO_PUMP;
 	pump[id].GPIO_PROT=GPIO_PROT;
 	pump[id].GPIO_CNT=GPIO_CNT;
@@ -148,7 +150,7 @@ void enable_pump(int ch,bool enable)
 void switch_pump(bool on_state)
 {
  int pump2switch;
- if (running_pump>-1) pump2switch=running_pump;	 
+ if (running_pump_ID>-1) pump2switch=running_pump_ID;	 
  else
  {
   int higher_prio_pump=0;
@@ -157,14 +159,16 @@ void switch_pump(bool on_state)
   if ((pump[higher_prio_pump].status==P_DISABLED) || (pump[higher_prio_pump].status==P_SUSPENDED))
   pump2switch=(higher_prio_pump==1)?0:1;
  }
+
+
  switch_pump_id_to_state(pump2switch,on_state?P_ON:P_OFF);
 }
 
 bool is_low_prio_pump_running()
 {
  if (pump_num<2) return false;
- if (running_pump==-1) return false;
- return (pump[running_pump].prio?false:true);
+ if (running_pump_ID==-1) return false;
+ return (pump[running_pump_ID].prio?false:true);
 }
 
 int other_pump(int id) {return((id==0)?1:0);}
@@ -197,7 +201,7 @@ T_pump_states check_pump_protection()
 			pump[id].protection_level_off=water_level;
 			pump[id].sink_time=now_pump()-pump[id].last_pump_on_time;
 			}
-      if (running_pump==id) active_pump_suspended=id;
+      if (running_pump_ID==id) active_pump_suspended=id;
       switch_pump_id_to_state(id,P_SUSPENDED);
 	}
 	else
@@ -235,11 +239,11 @@ T_pump_states check_pump_protection()
 
  if (is_low_prio_pump_running())
  {
-  if ((pump[other_pump(running_pump)].switchbackifavailable) && (now_pump()-pump[running_pump].last_pump_on_time)>pump[other_pump(running_pump)].pump_restart_delay)
-  if (isPUMP_available(other_pump(running_pump))) 
+  if ((pump[other_pump(running_pump_ID)].switchbackifavailable) && (now_pump()-pump[running_pump_ID].last_pump_on_time)>pump[other_pump(running_pump_ID)].pump_restart_delay)
+  if (isPUMP_available(other_pump(running_pump_ID))) 
   {
-    int other_pump_ID=other_pump(running_pump);
-    switch_pump_id_to_state(running_pump,P_OFF);
+    int other_pump_ID=other_pump(running_pump_ID);
+    switch_pump_id_to_state(running_pump_ID,P_OFF);
     switch_pump_id_to_state(other_pump_ID,P_ON);
   }
  }
@@ -261,13 +265,22 @@ float convertCNT2Liter(int delta_volume_cnt)
   return(1.0*delta_volume_cnt/YF_DN32_PULSE_PER_LITER);
 }
 
-char *GetPumpStatusString(int id)
+void GetPumpStatusString(int id, char* message, int buf_size)
 {
- char message[128];
  pcnt_unit_get_count(pump[id].pcnt_unit, &pump[id].daily_pump_volume);
- sprintf(message,"P%d: Status:%s, Daily Volume:%f",id+1,PUMP_status_str[pump[id].status],convertCNT2Liter(pump[id].daily_pump_volume));
- return(message);
+ char *MsgFormat= "P%d: Status:%s, Daily Volume:%1.1f";
+ if (buf_size>strlen(MsgFormat)+8) sprintf(message,"P%d: Status:%s, Daily Volume:%f",id+1,PUMP_status_str[pump[id].status],convertCNT2Liter(pump[id].daily_pump_volume));
 }
+
+void getpumptimechanges(int id, char* message, int buf_size)
+{
+			for (int i=0;i<sizeof(T_pump_states);i++)
+			{
+				if (buf_size>64) sprintf(message,"ID:%d %s: %lld\n",id,PUMP_status_str[i],pump[id].status_change_time[i]);
+			}
+}
+
+
 
 T_pump_states GetPumpStatus(int id)
 {
@@ -299,23 +312,23 @@ void get_LEVEL_string(char* result_string)
 int measure_flowrate()
 {
   clear_volumes_at_midnight();
-  if(running_pump!=-1)
+  if(running_pump_ID!=-1)
   {  
   static uint64_t TimePastVolumeMeasured=0;
 	if(TimePastVolumeMeasured==0)  TimePastVolumeMeasured=esp_timer_get_time();
 	uint64_t Volume_measure_delta_time; 
   
 	int delta_volume_cnt=0;
-	ESP_ERROR_CHECK(pcnt_unit_get_count(pump[running_pump].pcnt_unit, &pump[running_pump].daily_pump_volume));
-  delta_volume_cnt=pump[running_pump].daily_pump_volume-pump[running_pump].prev_daily_pump_volume;
-  pump[running_pump].prev_daily_pump_volume=pump[running_pump].daily_pump_volume;
+	ESP_ERROR_CHECK(pcnt_unit_get_count(pump[running_pump_ID].pcnt_unit, &pump[running_pump_ID].daily_pump_volume));
+  delta_volume_cnt=pump[running_pump_ID].daily_pump_volume-pump[running_pump_ID].prev_daily_pump_volume;
+  pump[running_pump_ID].prev_daily_pump_volume=pump[running_pump_ID].daily_pump_volume;
 	
 	if (((Volume_measure_delta_time=(esp_timer_get_time() - TimePastVolumeMeasured)) >= Volume_measure_interval_us) && (delta_volume_cnt>5))
     {
 	   char message[32];  
      float volume_rate_liter_per_min;	
      volume_rate_liter_per_min= 60*convertCNT2Liter(delta_volume_cnt)/(1.0*Volume_measure_delta_time/1000000.0);
-     sprintf(message,"%0.1f l/min %0.1f l",volume_rate_liter_per_min,convertCNT2Liter(pump[running_pump].daily_pump_volume-pump[running_pump].cnt_at_pump_start));
+     sprintf(message,"%0.1f l/min %0.1f l",volume_rate_liter_per_min,convertCNT2Liter(pump[running_pump_ID].daily_pump_volume-pump[running_pump_ID].cnt_at_pump_start));
      Write_Msg_toDisplay(5,message);
 	   TimePastVolumeMeasured = esp_timer_get_time(); // get next publish time
     }

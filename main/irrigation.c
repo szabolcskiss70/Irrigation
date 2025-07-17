@@ -386,7 +386,7 @@ void init_channel(int ch, char* name, int GPIO, bool fix_preassure)
 	channels[ch].fix_preassure=fix_preassure;
 	set_DIO_direction(GPIO,GPIO_MODE_OUTPUT);
 	for(int i=0; i<num_states;i++) channels[ch].status_change_time[i]=-1;
-	channels[ch].requested_ontime=300; //[s]
+	channels[ch].requested_ontime=30; //[min]
 }
 
 
@@ -948,11 +948,9 @@ bool TIME___CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 }
 bool PUMP___CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 {
- sprintf(MQTT_BLE_answer,"%s ",GetPumpStatusString(0)); 
- if (pump_num==2) 
-  {
-   strcat(MQTT_BLE_answer,",");	
-   strcat(MQTT_BLE_answer,GetPumpStatusString(1));
+ for(int i=0;i<pump_num;i++)	
+ {
+  GetPumpStatusString(i,MQTT_BLE_answer+strlen(MQTT_BLE_answer),sizeof(MQTT_BLE_answer)-strlen(MQTT_BLE_answer)-1);
  }
  return true;
 }
@@ -970,15 +968,17 @@ bool PUMP_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
     else if ((strlen(wilcarded_topic[1])==1) && (sscanf(wilcarded_topic[1],"%d",&ch)==1) && (ch>=1) && (ch<=2))
 	{
 		ch--;
-		if(strcmp(ldata,"ON")==0) switch_pump_id_to_state(ch,P_ON);
+		if(strcmp(ldata,"?")==0); // just query status by GetPumpStatusString
+		else if(strcmp(ldata,"ON")==0) switch_pump_id_to_state(ch,P_ON);
 		else if (strcmp(ldata,"DISABLE")==0) enable_pump(ch,false);
 		else if (strcmp(ldata,"ENABLE")==0) enable_pump(ch,true);
 		else if (strcmp(ldata,"SET_PRIO")==0) setPUMP_prio(ch,true);
 		else if (strcmp(ldata,"SET_SWITCHBACK")==0) setPUMP_switchbackifavailable(ch,true);
 		else if (strcmp(ldata,"DEL_SWITCHBACK")==0) setPUMP_switchbackifavailable(ch,false);
+		else if(strcmp(ldata,"TIMES")==0) getpumptimechanges(ch,MQTT_BLE_answer+strlen(MQTT_BLE_answer),sizeof(MQTT_BLE_answer)-strlen(MQTT_BLE_answer)-1);
         else switch_pump_id_to_state(ch,P_OFF);
 
-		PUMP___CB(ltopic,  ldata,  MQTT,wilcarded_topic);
+		GetPumpStatusString(ch,MQTT_BLE_answer+strlen(MQTT_BLE_answer),sizeof(MQTT_BLE_answer)-strlen(MQTT_BLE_answer)-1);
     }
     return true;
    
@@ -1293,13 +1293,14 @@ bool CHANNEL_request_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topi
 				int i;
 				ESP_LOGI(TAG, "CHANNEL/%s/request",channels[ch].Name);
 				if((ch>=0) && (ch<CHANNEL_NUM))
-				{
+				{char unit;
 				 for(i=0;i<num_states;i++)
 				 {
 				  if(strcmp(ldata,str_states[i])==0) break;
 				 }
 				 if (i<num_states) channels[ch].manual_change_request=i; 
 				 else if(strcmp(ldata,"ON")==0) channels[ch].manual_change_request=MAN_ON;
+				 else if((sscanf(ldata,"ON %d%c",&channels[ch].requested_ontime,&unit)==2) && (unit=='m')) channels[ch].manual_change_request=MAN_ON;
 				 else if(strcmp(ldata,"OFF")==0) channels[ch].manual_change_request=MAN_OFF;
 			     else channels[ch].manual_change_request=NOREQUEST;
 				 if(channels[ch].manual_change_request==ENABLED) {channels[ch].channel_disabled=0;Save_data_to_NVS();}
@@ -1315,12 +1316,12 @@ bool CHANNEL_request_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topi
 
 bool LIST_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 {
-	if (strcmp(ldata,"NAMES")==0)
-	{
-	 	
-	 strcpy(MQTT_BLE_answer,"Channel names:\n");
+	if (strcmp(ldata,"CHANNELS")==0)
+	{ 	
+	 MQTT_BLE_answer[0]=0;
 	 for(int ch=0;ch<CHANNEL_NUM;ch++)
 	 {
+	  sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"CH%d %8s:%16s\n",ch+1,channels[ch].Name,str_states[channels[ch].channel_state]);	
       append_ontimes2string(ch);		
 	 }
     } 
@@ -1385,8 +1386,9 @@ IRRIGATION/TIME/? {} -query TIME\n\
 IRRIGATION/TEMP/? {} -query temperature sensor\n\
 IRRIGATION/MEASURE_MODE {POWER:LEVEL:STACK:CT:LOG:VOLUME:OFF}\n\
 IRRIGATION/RESTART {ESP:WIFI} -force restart of ESP32 or WIFI dongle\n\
-IRRIGATION/ACS71020/READ {0xhex_address} \n\
-IRRIGATION/ACS71020/WRITE {0xhex_address=0xhex_value}";	
+IRRIGATION/ACS71020/READ {0xhex_address}\n\
+IRRIGATION/ACS71020/WRITE {0xhex_address=0xhex_value}\n\	
+IRRIGATION/LIST {CHANNELS|LOG|IRR}";	
 			
 				  my_esp_mqtt_client_publish(mqtt_client, "MEASURE/commands", message, 0, 0, 0);   //Qos=0; retain=0	
 					
@@ -1491,6 +1493,16 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 			   msg_id = my_esp_mqtt_client_publish(mqtt_client, "FIRMWARE/ROLLBACK", "", 0, 0, 0);   //Qos=1; retain=0
 			   ESP_LOGI(TAG, "publish successful, msg_id=%d", msg_id);
 			 }
+		 	if(mqtt_connected) 
+			{	
+					char message[64];  
+					char timeStr[32];           
+					time(&now_life_sent);
+					sprintf(timeStr,"%2.2d:%2.2d:%2.2d",(int)((now_life_sent)/3600),(int)(((now_life_sent)%3600)/60),(int)((now_life_sent)%60)); 
+			
+					sprintf(message,"%lld:%s",now_life_sent,timeStr);   
+					my_esp_mqtt_client_publish(mqtt_client, "LIFE", message, 0, 0, 1);   //Qos=0; retain=1
+			}
 			 		 
 	/* if(mqtt_connected)
      {	
@@ -1577,15 +1589,19 @@ void switch_pump_for_channel(int channel,int status)
 {
  if (status==1)	
  {
-	 switch_pump(true);
-	 channels[channel].Channel_pump_ON=true; 
+	    switch_pump(true);
+	    channels[channel].Channel_pump_ON=true; 
  }
  else
  {
-	channels[channel].Channel_pump_ON=false;  
-	for(int i=0; i<CHANNEL_NUM; i++)
-	 if (channels[i].Channel_pump_ON) return; // there is active channel, return without switch pump off
-    switch_pump(false);		
+     switch (channels[channel].channel_state)
+	 {
+		case SUSPENDED:
+		case DELAY:  break;
+		default:
+			channels[channel].Channel_pump_ON=false;  
+		    switch_pump(false);		
+	 }
  }
 }
 
@@ -1648,7 +1664,7 @@ void switch_channel(int ch, T_states status)
 		channels[ch].period_volume=0;
 		channels[ch].ontime_of_period_added_to_daily=false;
 	 }
-	 else if ((status==PROG_END) || (status==PROG_FINISHED))
+	 else if ((status==PROG_END) || (status==PROG_FINISHED) || (status==MAN_OFF))
 	 {
 		ESP_LOGI(TAG,"PROG FINISH or END"); 
 		if (!channels[ch].ontime_of_period_added_to_daily)
@@ -1659,7 +1675,9 @@ void switch_channel(int ch, T_states status)
 					}
 	 }
 
-
+	channels[ch].status_change_time[status]=now;	
+	channels[ch].channel_state=status;		   
+    switch_channel_relays(ch,new_relay_status);
 	 
 	 if(new_relay_status) {if (!is_channel_active(ch)) {channels[ch].last_switch_on_time=now;channels[ch].period_volume=0;}} // from OFF to ON
 	else if (is_channel_active(ch)) if (channels[ch].last_switch_on_time!=-1) {channels[ch].period_ontime+=now-channels[ch].last_switch_on_time;} //from ON to OFF
@@ -1677,9 +1695,7 @@ void switch_channel(int ch, T_states status)
 	  
 				}
 
-	channels[ch].status_change_time[status]=now;	
-	channels[ch].channel_state=status;		   
-    switch_channel_relays(ch,new_relay_status);
+
 				
 				if(mqtt_connected)
 				{	
@@ -2208,6 +2224,9 @@ void mainTask(void *pvParameters){
 	int hour=(int)now/3600;
 	if(prevhour!=hour)
 	{
+     if ((now_life_sent-now_life_received)>1200) reboot_WIFI_STICK();
+
+	
 	 MQTT_BLE_answer[0]=0;	
 	 for(i=0;i<CHANNEL_NUM;i++) append_ontimes2string(i);
 	 my_esp_mqtt_client_publish(mqtt_client, "REPORT/ONTIME", MQTT_BLE_answer, 0, 0, 0);   //Qos=0; retain=0
@@ -2224,7 +2243,7 @@ void mainTask(void *pvParameters){
 	{		
      if(channels[ch].channel_state==MAN_ON)
 	 {
-		if (now-channels[ch].last_switch_on_time>channels[ch].requested_ontime)  switch_channel(ch,MAN_OFF);
+		if (now-channels[ch].last_switch_on_time>channels[ch].requested_ontime*60)  switch_channel(ch,MAN_OFF);
 	 }
 	}
 
@@ -3535,14 +3554,5 @@ void app_main()
 
 
 
-	if(mqtt_connected) 
-	   {	
-			  char message[64];  
-			  char timeStr[32];           
-			  time(&now_life_sent);
-			  sprintf(timeStr,"%2.2d:%2.2d:%2.2d",(int)((now_life_sent)/3600),(int)(((now_life_sent)%3600)/60),(int)((now_life_sent)%60)); 
-	
-			  sprintf(message,"%lld:%s",now_life_sent,timeStr);   
-			  my_esp_mqtt_client_publish(mqtt_client, "LIFE", message, 0, 0, 1);   //Qos=0; retain=1
-	   }
+
 }

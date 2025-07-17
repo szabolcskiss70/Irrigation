@@ -32,6 +32,7 @@ typedef struct{
     int daily_pump_volume;
     int prev_daily_pump_volume;
 	time_t status_change_time[sizeof(T_pump_states)];
+	bool pump_running;
 } T_pump; 
 
 //extern T_pump pump[2];
@@ -43,7 +44,8 @@ void enable_pump(int ch,bool enable);
 void init_pump(int id, int GPIO_PUMP, int GPIO_PROT,int GPIO_CNT,bool prio, bool switchbackifresumed);
 bool isPUMP_disabled_or_suspended();
 T_pump_states check_pump_protection();
-char *GetPumpStatusString(int id);
+void GetPumpStatusString(int id, char* message, int buf_size);
+void getpumptimechanges(int id, char* message, int buf_size);
 void set_restart_delay(int ch, int restart_delay);
 void get_LEVEL_string(char* result_string);
 int measure_flowrate();
