@@ -703,15 +703,15 @@ void report_scheduling(int ch)
 
 
 
-int is_channel_active(int ch)
+bool is_channel_active(int ch)
 {
 	switch (channels[ch].channel_state)
 	{
 	 case MAN_ON:
 	 case PROG_STARTED:
 	 case MAN_RESUMED:
-	 case PROG_RESUMED: return 1;
-     default: return 0;	 
+	 case PROG_RESUMED: return true;
+     default: return false;	 
 	}
 }
 
@@ -727,8 +727,8 @@ time_t sec_in_day()
 
 void append_ontimes2string(int ch) 
 {
-	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s: Daily ontime: %llds  %1.0fl\n",channels[ch].Name,channels[ch].prev_daily_period_ontimes+is_channel_active(ch)?(sec_in_day()-channels[ch].last_switch_on_time):0,1.0*channels[ch].daily_volume/YF_DN32_PULSE_PER_LITER);
-	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period ontime: %llds  %1.0fl\n",channels[ch].Name,channels[ch].period_ontime+is_channel_active(ch)?(sec_in_day()-channels[ch].last_switch_on_time):0,1.0*channels[ch].period_volume/YF_DN32_PULSE_PER_LITER);
+	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s: Daily ontime: %llds  %1.0fl\n",channels[ch].Name,channels[ch].prev_daily_period_ontimes+(is_channel_active(ch))?(sec_in_day()-channels[ch].last_switch_on_time):0,1.0*channels[ch].daily_volume/YF_DN32_PULSE_PER_LITER);
+	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period ontime: %llds  %1.0fl\n",channels[ch].Name,channels[ch].period_ontime+(is_channel_active(ch))?(sec_in_day()-channels[ch].last_switch_on_time):0,1.0*channels[ch].period_volume/YF_DN32_PULSE_PER_LITER);
 }
 
 
@@ -919,7 +919,7 @@ bool DEBUG_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 	else if (strcmp(ldata,"ERASE_LOG")==0)
 	{
 	 remove(LOG_FILE);
-	 append_log(LOG_FILE,"New log");
+	 append_log(LOG_FILE,"New log%d",1);
 	 strcpy(MQTT_BLE_answer,"LOG erased");
 	}
 	else if ((sscanf(ldata,"LEVEL %d",&log_level)==1) &&  (log_level<=5) &&  (log_level>=0)) 
@@ -1731,7 +1731,7 @@ void switch_channel(int ch, T_states status)
 		return; //not allowed to switch pump on 
 	}
 
-    if (status==PROG_STARTED)
+    if((status==PROG_STARTED) || (status==MAN_ON))
 	 {
 		ESP_LOGI(TAG,"PROG START"); 
 		channels[ch].period_ontime=0;
@@ -3562,7 +3562,7 @@ void app_main()
 	
 
 
-	//append_log(LOG_FILE,"Rebooted. run_mode=%d\n",run_mode); 
+	 append_log(LOG_FILE,"Rebooted. run_mode=%d\n",run_mode); 
 	//append_log(IRR_FILE,"append test. run_mode=%d\n",run_mode); 
     //read_log(IRR_FILE);
 
