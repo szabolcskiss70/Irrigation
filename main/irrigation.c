@@ -729,6 +729,13 @@ void append_ontimes2string(int ch)
 {
 	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s: Daily ontime: %llds  %1.0fl\n",channels[ch].Name,channels[ch].prev_daily_period_ontimes+(is_channel_active(ch))?(sec_in_day()-channels[ch].last_switch_on_time):0,1.0*channels[ch].daily_volume/YF_DN32_PULSE_PER_LITER);
 	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period ontime: %llds  %1.0fl\n",channels[ch].Name,channels[ch].period_ontime+(is_channel_active(ch))?(sec_in_day()-channels[ch].last_switch_on_time):0,1.0*channels[ch].period_volume/YF_DN32_PULSE_PER_LITER);
+    
+	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"status:%s\n",str_states[channels[ch].channel_state]);
+	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"period_ontime:%d\n",(int)is_channel_active(ch));
+	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"last_switch_on_time:%lld\n",channels[ch].last_switch_on_time);
+	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"period_ontime:%d\n",channels[ch].period_ontime);
+	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"prev_daily_period_ontimes:%d\n",channels[ch].prev_daily_period_ontimes);
+	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"sec_in_day:%lld\n",sec_in_day());
 }
 
 
@@ -866,7 +873,7 @@ FILE *_log_remote_fp=NULL;
 //      @important Do NOT use the ESP_LOG* macro's in this function ELSE recursive loop and stack overflow! So use printf() instead for debug messages.
 int _log_vprintf(const char *fmt, va_list args) {
     static bool static_fatal_error = false;
-    static const uint32_t WRITE_CACHE_CYCLE = 5;
+    static const uint32_t WRITE_CACHE_CYCLE = 2;
     static uint32_t counter_write = 0;
     int iresult;
 
@@ -2625,7 +2632,9 @@ if(run_mode & (1<<MEASURE_LEVEL)) //measure water level
   }
   } //while(1)
 
+  if (mqtt_connected) my_esp_mqtt_client_publish(mqtt_client, "MAINTASK", "while exit", 0, 0, 0);   //Qos=0; retain=0	 
   xSemaphoreGive(MAIN_TASK_mutex);
+  if (mqtt_connected) my_esp_mqtt_client_publish(mqtt_client, "MAINTASK", "exit", 0, 0, 0);   //Qos=0; retain=0	
 
 }
 
@@ -2789,6 +2798,7 @@ void ota_update_task(void *pvParameter)
 {	
  xSemaphoreTake(MAIN_TASK_mutex, portMAX_DELAY);	
  ESP_LOGI(TAG, "Starting OTA update");
+ my_esp_mqtt_client_publish(mqtt_client, "OTA/START", "OTA TASK STARTED", 0, 0, 0);   //Qos=1; retain=1
  //int ptr=strlen(OTA_SOURCE_URL)-1;
 //while((ptr>OTA_SOURCE_URL) && (strcmp(OTA_SOURCE_URL[ptr-3],".bin"!=0))) OTA_SOURCE_URL[ptr--]=0;
 
