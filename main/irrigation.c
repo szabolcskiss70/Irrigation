@@ -1688,7 +1688,7 @@ void switch_channel_relays(int channel, int status)
 
 
 
-void switch_channel(int ch, T_states status)
+void switch_channel(int ch, T_states new_status)
 {
 	int new_relay_status=0;
 	
@@ -1697,20 +1697,20 @@ void switch_channel(int ch, T_states status)
 	int msg_id;
 	time_t now=sec_in_day();
    	
-	if((status==MAN_ON) ||  (status==PROG_STARTED)  ||  (status==MAN_RESUMED) ||  (status==PROG_RESUMED))  new_relay_status=1; 
+	if((new_status==MAN_ON) ||  (new_status==PROG_STARTED)  ||  (new_status==MAN_RESUMED) ||  (new_status==PROG_RESUMED))  new_relay_status=1; 
 	
-	if(channels[ch].channel_state!=status)
+	if(channels[ch].channel_state!=new_status)
 	{//statuschange			
 	 sprintf(topicname,"%s/CHANNEL/%s/status",maintopic,channels[ch].Name);
 	 if(channels[ch].channel_state==DISABLED)
 	 {
 		new_relay_status=0;
-		if((status!=ENABLED) && (status!=DISABLED)) return;
+		if((new_status!=ENABLED) && (new_status!=DISABLED)) return;
 	 }
 	 
-	 else if(((channels[ch].channel_state==SUSPENDED) || (channels[ch].channel_state==DELAY)) && ((status==MAN_ON) || (status==PROG_STARTED)))
+	 else if(((channels[ch].channel_state==SUSPENDED) || (channels[ch].channel_state==DELAY)) && ((new_status==MAN_ON) || (new_status==PROG_STARTED)))
 	 {
-	 	channels[ch].channel_states_before_suspend=status; //new turn ON request will be handled after resume
+	 	channels[ch].channel_states_before_suspend=new_status; //new turn ON request will be handled after resume
 		if(mqtt_connected)
 				{	
 			     char message[64]; 
@@ -1731,14 +1731,21 @@ void switch_channel(int ch, T_states status)
 		return; //not allowed to switch pump on 
 	}
 
-    if((status==PROG_STARTED) || (status==MAN_ON))
+    if((new_status==PROG_STARTED) || (new_status==MAN_ON))
 	 {
 		ESP_LOGI(TAG,"PROG START"); 
 		channels[ch].period_ontime=0;
 		channels[ch].period_volume=0;
 		channels[ch].ontime_of_period_added_to_daily=false;
 	 }
-	 else if ((status==PROG_END) || (status==PROG_FINISHED) || (status==MAN_OFF))
+	 
+
+	
+	 
+	 if(new_relay_status) {if (!is_channel_active(ch)) {channels[ch].last_switch_on_time=now;channels[ch].period_volume=0;}} // from OFF to ON
+	else if (is_channel_active(ch))  {channels[ch].period_ontime+=now-channels[ch].last_switch_on_time;} //from ON to OFF
+	
+    if ((new_status==PROG_END) || (new_status==PROG_FINISHED) || (new_status==MAN_OFF))
 	 {
 		ESP_LOGI(TAG,"PROG FINISH or END"); 
 		if (!channels[ch].ontime_of_period_added_to_daily)
@@ -1747,14 +1754,7 @@ void switch_channel(int ch, T_states status)
 				 	 channels[ch].prev_daily_period_ontimes+=channels[ch].period_ontime;
 				 	 channels[ch].ontime_of_period_added_to_daily=true;
 					}
-	 }
-
-	
-	 
-	 if(new_relay_status) {if (!is_channel_active(ch)) {channels[ch].last_switch_on_time=now;channels[ch].period_volume=0;}} // from OFF to ON
-	else if (is_channel_active(ch))  {channels[ch].period_ontime+=now-channels[ch].last_switch_on_time;} //from ON to OFF
-	
-
+	 } 
 
 	if(measure_mode==LOG)
 				{
@@ -1767,8 +1767,8 @@ void switch_channel(int ch, T_states status)
 	  
 				}
 
-     channels[ch].status_change_time[status]=now;	
-	 channels[ch].channel_state=status;		   
+     channels[ch].status_change_time[new_status]=now;	
+	 channels[ch].channel_state=new_status;		   
      switch_channel_relays(ch,new_relay_status);
 				
 				if(mqtt_connected)
@@ -1781,7 +1781,7 @@ void switch_channel(int ch, T_states status)
 				 }
 		         else
 				 {			 
-			    	 msg_id = esp_mqtt_client_publish(mqtt_client,topicname,str_states[status]  , 0, 0, 1);
+			    	 msg_id = esp_mqtt_client_publish(mqtt_client,topicname,str_states[new_status]  , 0, 0, 1);
 				     ESP_LOGI(TAG, "sent publish successful, msg_id=%d", msg_id);
 				 }
 				}

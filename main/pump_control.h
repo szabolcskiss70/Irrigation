@@ -31,7 +31,7 @@ typedef struct{
 	pcnt_unit_handle_t pcnt_unit;
     int daily_pump_volume;
     int prev_daily_pump_volume;
-	time_t status_change_time[sizeof(T_pump_states)];
+	time_t status_change_time[P_ON-P_DISABLED+1];
 	bool pump_running;
 } T_pump; 
 
