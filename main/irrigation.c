@@ -168,10 +168,9 @@ void read_ACS71020_register2(int reg_addr,long value);
 #define Rs 1000.0
 #define R1_4 2000000.0
 
-#define num_states 15
-typedef enum {MAN_ON,PROG_STARTED,MAN_RESUMED,PROG_RESUMED,INIT,ENABLED,DISABLED,MAN_OFF,SUSPENDED,DELAY,PROG_FINISHED,PROG_END,IDLE,REBOOTED,NOREQUEST} T_states;
-char* str_states[num_states]={"MAN_ON","PROG_STARTED","MAN_RESUMED","PROG_RESUMED","INIT","ENABLED","DISABLED","MAN_OFF","SUSPENDED","DELAY","PROG_FINISHED","PROG_END","IDLE","REBOOTED","NOREQUEST"};
-char* str_short_states[num_states]={"ON_M","START_P","RES_M","RES_P","INIT","ENAB","DIS","OFF_M","SUSP","DELAY","FIN","END_P","IDLE","REBO","NO_REQ"};
+typedef enum {STARTED,RESUMED,INIT,ENABLED,DISABLED,SUSPENDED,DELAY,FINISHED,END,IDLE,REBOOTED,NOREQUEST} T_states;
+char* str_states[NOREQUEST-STARTED+1]={"STARTED","RESUMED","INIT","ENABLED","DISABLED","SUSPENDED","DELAY","FINISHED","END","IDLE","REBOOTED","NOREQUEST"};
+char* str_short_states[NOREQUEST-STARTED+1]={"START","RES","INIT","ENAB","DIS","SUSP","DELAY","FIN","END","IDLE","REBO","NO_REQ"};
 typedef enum {OFF,LEVEL,POWER,CT,STACK,LOG,VOLUME} T_measure_mode;
 typedef enum {USE_BLE,USE_WIFI,MAIN_TASK,POWERMETER_TASK,TEMPSENSOR,CURRENTSENSOR,MEASURE_LEVEL,MEASURE_POWER} T_run_mode_bits;
 int run_mode=(1<<USE_BLE) | (1<<USE_WIFI);
@@ -346,9 +345,9 @@ typedef struct{
 #define CHANNEL_NUM 3
 #define PERIODS 10
 typedef struct{
-	char Name[8];
+	char Name[8]; //Name of the channel
 	int Valve_GPIO_OUTPUT;
-	int channel_disabled; //=0;
+	int channel_disabled; //
 	bool ontime_of_period_added_to_daily;
 	int prev_daily_period_ontimes; //sum of finished period ontimes
 	int period_ontime;			//sum of on times in period (end-resume+suspend-resume+suspend-start)
@@ -357,12 +356,17 @@ typedef struct{
 	int daily_volume; //=0;
 	bool Channel_pump_ON; //=false;
 	T_chedule_data Chedule_array[PERIODS]; 
-	T_states channel_states_before_suspend;// =INIT;
-    T_states channel_state; //=INIT;
-	time_t status_change_time[num_states];
+	T_states channel_states_before_suspend; //saved status before suspend for chitching state during resume
+    T_states channel_state; //actual status of the channel;
+	time_t status_change_time[NOREQUEST-STARTED+1];
     T_states manual_change_request;  //=NOREQUEST;	
-	int requested_ontime;
+	int requested_ontime; 
 	bool fix_preassure;
+	bool manual_mode;
+	int suspend_cnt;
+	int last_sink_time;
+	float last_sink_volume;
+	int last_sink_flowmeter_counts;
 } T_channel;
 T_channel channels[CHANNEL_NUM];
 
@@ -385,8 +389,10 @@ void init_channel(int ch, char* name, int GPIO, bool fix_preassure)
     channels[ch].manual_change_request=NOREQUEST;	
 	channels[ch].fix_preassure=fix_preassure;
 	set_DIO_direction(GPIO,GPIO_MODE_OUTPUT);
-	for(int i=0; i<num_states;i++) channels[ch].status_change_time[i]=-1;
+	for(int i=STARTED; i<=NOREQUEST;i++) channels[ch].status_change_time[i]=-1;
 	channels[ch].requested_ontime=30; //[min]
+	channels[ch].manual_mode=false;
+	int suspend_cnt=0;
 }
 
 
@@ -482,20 +488,28 @@ void to_lower(const char *str, char *out_str)
  
  void Publish_file(char* filename)
 {
-    char buf[1000];
+    char buf_2read[1000];
+	char buf_2send[1000]="";
 	if (mqtt_connected)
 	{
 		FILE *ptr_file=fopen(filename,"r");
 		if (ptr_file!=NULL)
 		{
-			while (fgets(buf,1000, ptr_file)!=NULL) 	
+			while (fgets(buf_2read,sizeof(buf_2read)-1, ptr_file)!=NULL) 	
 			{
 					int msg_id;
-					char topicname[32];	
-					
-					strcpy(topicname, "FILE");	
-					msg_id = my_esp_mqtt_client_publish(mqtt_client, topicname, buf, 0, 0, 0);   //Qos=1; retain=0
+					if (strlen(buf_2send)+strlen(buf_2read)+1>sizeof(buf_2send))
+					{
+						msg_id = my_esp_mqtt_client_publish(mqtt_client, "FILE", buf_2send, 0, 0, 0);   //Qos=1; retain=0
+					    buf_2send[0]=0;
+					}
+					else 
+					{
+					 strcat(buf_2send,buf_2read);
+					}
 			}
+			if (strlen(buf_2send)) my_esp_mqtt_client_publish(mqtt_client, "FILE", buf_2send, 0, 0, 0);   //Qos=1; retain=0
+			
 			fclose(ptr_file);
 	    }
 	}
@@ -707,10 +721,8 @@ bool is_channel_active(int ch)
 {
 	switch (channels[ch].channel_state)
 	{
-	 case MAN_ON:
-	 case PROG_STARTED:
-	 case MAN_RESUMED:
-	 case PROG_RESUMED: return true;
+	 case STARTED:
+	 case RESUMED: return true;
      default: return false;	 
 	}
 }
@@ -727,11 +739,14 @@ time_t sec_in_day()
 
 void append_ontimes2string(int ch) 
 {
-	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s: Daily ontime: %llds  %1.0fl\n",channels[ch].Name,channels[ch].prev_daily_period_ontimes+(is_channel_active(ch))?(sec_in_day()-channels[ch].last_switch_on_time):0,1.0*channels[ch].daily_volume/YF_DN32_PULSE_PER_LITER);
-	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period ontime: %llds  %1.0fl\n",channels[ch].Name,channels[ch].period_ontime+(is_channel_active(ch))?(sec_in_day()-channels[ch].last_switch_on_time):0,1.0*channels[ch].period_volume/YF_DN32_PULSE_PER_LITER);
-    
+	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s: Daily ontime: %llds  %1.0fl\n",channels[ch].Name,channels[ch].prev_daily_period_ontimes+(is_channel_active(ch)==true)?(sec_in_day()-channels[ch].last_switch_on_time):0,1.0*channels[ch].daily_volume/YF_DN32_PULSE_PER_LITER);
+	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period ontime: %llds  %1.0fl\n",channels[ch].Name,channels[ch].period_ontime+(is_channel_active(ch)==true)?(sec_in_day()-channels[ch].last_switch_on_time):0,1.0*channels[ch].period_volume/YF_DN32_PULSE_PER_LITER);
+    sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period sink time: %ds\n",channels[ch].Name,channels[ch].last_sink_time);
+    sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period sink volume: %1.1fs\n",channels[ch].Name,channels[ch].last_sink_volume);
+
+
 	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"status:%s\n",str_states[channels[ch].channel_state]);
-	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"period_ontime:%d\n",(int)is_channel_active(ch));
+	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"is_channel_active:%d\n",(int)is_channel_active(ch));
 	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"last_switch_on_time:%lld\n",channels[ch].last_switch_on_time);
 	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"period_ontime:%d\n",channels[ch].period_ontime);
 	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"prev_daily_period_ontimes:%d\n",channels[ch].prev_daily_period_ontimes);
@@ -1274,7 +1289,7 @@ bool CHANNEL_TIMES_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[
 		return false;
 	 }
 	 MQTT_BLE_answer[0]=0;
-			for (int i=0;i<num_states;i++)
+			for (int i=STARTED;i<=NOREQUEST;i++)
 			{
 				sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"CH:%s %s: %lld\n",channels[ch].Name,str_short_states[i],channels[ch].status_change_time[i]);
 			}
@@ -1374,14 +1389,14 @@ bool CHANNEL_request_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topi
 				ESP_LOGI(TAG, "CHANNEL/%s/request",channels[ch].Name);
 				if((ch>=0) && (ch<CHANNEL_NUM))
 				{char unit;
-				 for(i=0;i<num_states;i++)
+				 for(i=STARTED;i<=NOREQUEST;i++)
 				 {
 				  if(strcmp(ldata,str_states[i])==0) break;
 				 }
-				 if (i<num_states) {channels[ch].manual_change_request=i; channels[ch].requested_ontime=30;} 
-				 else if(strcmp(ldata,"ON")==0) {channels[ch].requested_ontime=30;channels[ch].manual_change_request=MAN_ON;}
-				 else if((sscanf(ldata,"ON %d%c",&channels[ch].requested_ontime,&unit)==2) && (unit=='m')) channels[ch].manual_change_request=MAN_ON;
-				 else if(strcmp(ldata,"OFF")==0) channels[ch].manual_change_request=MAN_OFF;
+				 if (i<NOREQUEST) {channels[ch].manual_change_request=i; channels[ch].requested_ontime=30;} 
+				 else if(strcmp(ldata,"ON")==0) {channels[ch].requested_ontime=30;channels[ch].manual_change_request=STARTED;}
+				 else if((sscanf(ldata,"ON %d%c",&channels[ch].requested_ontime,&unit)==2) && (unit=='m')) channels[ch].manual_change_request=STARTED;
+				 else if(strcmp(ldata,"OFF")==0) channels[ch].manual_change_request=END;
 			     else channels[ch].manual_change_request=NOREQUEST;
 
 				 if(channels[ch].manual_change_request==ENABLED) {channels[ch].channel_disabled=0;Save_data_to_NVS();}
@@ -1450,7 +1465,7 @@ IRRIGATION/FIRMWARE/URL {URL} -set new URL for OTA\n\
 IRRIGATION/FIRMWARE/SELECT_URL {?:G:S:N} - ?: query, S:szabolcskiss; G:github; N:new given by FIRMWARE/URL \n\
 IRRIGATION/FIRMWARE/VERSION  {version:?} -set new version for OTA:query\n\
 IRRIGATION/FIRMWARE/ROLLBACK {ROLLBACK:CANCEL_ROLLBACK} -keep or rollback OTA update\n\
-IRRIGATION/CHANNEL/x/REQUEST {MAN_ON,PROG_STARTED,MAN_RESUMED,PROG_RESUMED,INIT,ENABLED,DISABLED,MAN_OFF,SUSPENDED,DELAY,PROG_FINISHED,PROG_END,IDLE,REBOOTED,NOREQUEST} -set new state\n\
+IRRIGATION/CHANNEL/x/REQUEST {STARTED,RESUMED,INIT,ENABLED,DISABLED,SUSPENDED,DELAY,FINISHED,END,IDLE,REBOOTED,NOREQUEST} -set new state\n\
 IRRIGATION/CHANNEL/x/SCHEDULE/PERIODx {10:00-12:00 [+++++++] 30 2000} -add new schedule period 30min 2000l\n\
 IRRIGATION/CHANNEL/x/SCHEDULE/? {}   -list all programmed periods\n\
 IRRIGATION/CHANNEL/x/STATISTIC {} -get statistic\n\
@@ -1485,7 +1500,7 @@ FIRMWARE/URL {URL} -set new URL for OTA\n\
 FIRMWARE/SELECT_URL {?:G:S:N} - ?: query, S:szabolcskiss; G:github; N:new given by FIRMWARE/URL \n\
 FIRMWARE/VERSION  {version:?} -set new version for OTA:query\n\
 FIRMWARE/ROLLBACK {ROLLBACK:CANCEL_ROLLBACK} -keep or rollback OTA update\n\
-CHANNEL/x/REQUEST {MAN_ON,PROG_STARTED,MAN_RESUMED,PROG_RESUMED,INIT,ENABLED,DISABLED,MAN_OFF,SUSPENDED,DELAY,PROG_FINISHED,PROG_END,IDLE,REBOOTED,NOREQUEST} -set new state\n\
+CHANNEL/x/REQUEST {STARTED,RESUMED,INIT,ENABLED,DISABLED,SUSPENDED,DELAY,FINISHED,END,IDLE,REBOOTED,NOREQUEST} -set new state\n\
 CHANNEL/x/SCHEDULE/PERIODx {10:00-12:00 [+++++++] 30 2000} -add new schedule period 30min 2000l\n\
 CHANNEL/x/SCHEDULE/? {}   -list all programmed periods\n\
 CHANNEL/x/STATISTIC {} -get statistic\n\
@@ -1704,7 +1719,18 @@ void switch_channel(int ch, T_states new_status)
 	int msg_id;
 	time_t now=sec_in_day();
    	
-	if((new_status==MAN_ON) ||  (new_status==PROG_STARTED)  ||  (new_status==MAN_RESUMED) ||  (new_status==PROG_RESUMED))  new_relay_status=1; 
+    if(new_status==SUSPENDED) 
+	{
+		channels[ch].suspend_cnt++;
+		if (channels[ch].suspend_cnt==1)
+		{
+			channels[ch].last_sink_time=getsinktime(0); // first pump
+			channels[ch].last_sink_volume=getsinkvolume(0);
+			
+		}
+	}
+
+	if((new_status==STARTED)  ||  (new_status==RESUMED))  new_relay_status=1; 
 	
 	if(channels[ch].channel_state!=new_status)
 	{//statuschange			
@@ -1715,7 +1741,7 @@ void switch_channel(int ch, T_states new_status)
 		if((new_status!=ENABLED) && (new_status!=DISABLED)) return;
 	 }
 	 
-	 else if(((channels[ch].channel_state==SUSPENDED) || (channels[ch].channel_state==DELAY)) && ((new_status==MAN_ON) || (new_status==PROG_STARTED)))
+	 else if(((channels[ch].channel_state==SUSPENDED) || (channels[ch].channel_state==DELAY)) && ((new_status==STARTED)))
 	 {
 	 	channels[ch].channel_states_before_suspend=new_status; //new turn ON request will be handled after resume
 		if(mqtt_connected)
@@ -1738,7 +1764,7 @@ void switch_channel(int ch, T_states new_status)
 		return; //not allowed to switch pump on 
 	}
 
-    if((new_status==PROG_STARTED) || (new_status==MAN_ON))
+    if(new_status==STARTED)
 	 {
 		ESP_LOGI(TAG,"PROG START"); 
 		channels[ch].period_ontime=0;
@@ -1752,12 +1778,12 @@ void switch_channel(int ch, T_states new_status)
 	 if(new_relay_status) {if (!is_channel_active(ch)) {channels[ch].last_switch_on_time=now;channels[ch].period_volume=0;}} // from OFF to ON
 	else if (is_channel_active(ch))  {channels[ch].period_ontime+=now-channels[ch].last_switch_on_time;} //from ON to OFF
 	
-    if ((new_status==PROG_END) || (new_status==PROG_FINISHED) || (new_status==MAN_OFF))
+    if ((new_status==END) || (new_status==FINISHED))
 	 {
 		ESP_LOGI(TAG,"PROG FINISH or END"); 
 		if (!channels[ch].ontime_of_period_added_to_daily)
 					{
-			         append_log(IRR_FILE,"%s %ds  %1.0fl",channels[ch].Name,channels[ch].period_ontime,1.0*channels[ch].period_volume/YF_DN32_PULSE_PER_LITER);
+			         append_log(IRR_FILE,"%s %ds  %1.0fl\n",channels[ch].Name,channels[ch].period_ontime,1.0*channels[ch].period_volume/YF_DN32_PULSE_PER_LITER);
 				 	 channels[ch].prev_daily_period_ontimes+=channels[ch].period_ontime;
 				 	 channels[ch].ontime_of_period_added_to_daily=true;
 					}
@@ -2315,9 +2341,13 @@ void mainTask(void *pvParameters){
 	
 	for(ch=0;ch<CHANNEL_NUM;ch++) //auto switch off of manually on channels
 	{		
-     if(channels[ch].channel_state==MAN_ON)
+     if(channels[ch].manual_mode)
 	 {
-		if ((now-channels[ch].last_switch_on_time)>(channels[ch].requested_ontime*60))  switch_channel(ch,MAN_OFF);
+		if ((now-channels[ch].last_switch_on_time)>(channels[ch].requested_ontime*60))  
+		{
+			switch_channel(ch,END);
+			channels[ch].manual_mode=false;
+		}
 	 }
 	}
 
@@ -2325,6 +2355,7 @@ void mainTask(void *pvParameters){
 	{		
      if (channels[ch].manual_change_request!=NOREQUEST)
 	 {
+		channels[ch].manual_mode=true;
 		switch_channel(ch,channels[ch].manual_change_request);
 		channels[ch].manual_change_request=NOREQUEST;
 	 }
@@ -2404,17 +2435,17 @@ void mainTask(void *pvParameters){
 			
 			if(now-channels[ch].Chedule_array[i].on_time<30) 
 			{ 
-				if(channels[ch].channel_state!=PROG_STARTED) switch_channel(ch,PROG_STARTED);		
+				if(channels[ch].channel_state!=STARTED) switch_channel(ch,STARTED);		
 			}
 			else if(channels[ch].Chedule_array[i].off_time-now<30) 
 			{
-				if(channels[ch].channel_state!=PROG_END) switch_channel(ch,PROG_END);			
+				if(channels[ch].channel_state!=END) switch_channel(ch,END);			
 			}
 			else if(is_channel_active(ch))
 			{
      		 if ((channels[ch].Chedule_array[i].duration<=(channels[ch].period_ontime + now-channels[ch].last_switch_on_time)/60) ||
 			    (channels[ch].Chedule_array[i].volume<=channels[ch].period_volume/YF_DN32_PULSE_PER_LITER))	
-				 switch_channel(ch,PROG_FINISHED);		 
+				 switch_channel(ch,FINISHED);		 
 			}	
 		}	
 	   }		
@@ -2430,10 +2461,8 @@ void mainTask(void *pvParameters){
 		  { 
 	        switch(channels[ch].channel_state)
 			{ //switch active channels to SUSPENDED
-				case MAN_ON:
-				case PROG_STARTED:
-				case MAN_RESUMED:
-				case PROG_RESUMED:
+				case STARTED:
+				case RESUMED:
 				  channels[ch].channel_states_before_suspend=channels[ch].channel_state;
 				  switch_channel(ch,SUSPENDED);
 				default: break;
@@ -2459,8 +2488,7 @@ void mainTask(void *pvParameters){
 				case DELAY: 
 			                 switch (channels[ch].channel_states_before_suspend)
 							 {
-								case MAN_ON: switch_channel(ch,MAN_RESUMED); break;
-								case PROG_STARTED: switch_channel(ch,PROG_RESUMED); break;
+								case STARTED: switch_channel(ch,RESUMED); break;
 								default:switch_channel(ch,channels[ch].channel_states_before_suspend);
 							 }	
 							 break;
