@@ -739,10 +739,13 @@ time_t sec_in_day()
 
 void append_ontimes2string(int ch) 
 {
-	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s: Daily ontime: %llds  %1.0fl\n",channels[ch].Name,channels[ch].prev_daily_period_ontimes+(is_channel_active(ch)==true)?(sec_in_day()-channels[ch].last_switch_on_time):0,1.0*channels[ch].daily_volume/YF_DN32_PULSE_PER_LITER);
-	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period ontime: %llds  %1.0fl\n",channels[ch].Name,channels[ch].period_ontime+(is_channel_active(ch)==true)?(sec_in_day()-channels[ch].last_switch_on_time):0,1.0*channels[ch].period_volume/YF_DN32_PULSE_PER_LITER);
+	time_t timeofactivechannel=0;
+	if (is_channel_active(ch)==true) timeofactivechannel=sec_in_day()-channels[ch].last_switch_on_time;
+	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s: Daily ontime: %llds  %1.0fl\n",channels[ch].Name,channels[ch].prev_daily_period_ontimes+timeofactivechannel,1.0*channels[ch].daily_volume/YF_DN32_PULSE_PER_LITER);
+	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period ontime: %llds  %1.0fl\n",channels[ch].Name,channels[ch].period_ontime+timeofactivechannel,1.0*channels[ch].period_volume/YF_DN32_PULSE_PER_LITER);
     sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period sink time: %ds\n",channels[ch].Name,channels[ch].last_sink_time);
     sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period sink volume: %1.1fs\n",channels[ch].Name,channels[ch].last_sink_volume);
+    sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:suspend count: %ds\n",channels[ch].Name,channels[ch].suspend_cnt);
 
 
 	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"status:%s\n",str_states[channels[ch].channel_state]);
