@@ -745,7 +745,7 @@ void append_ontimes2string(int ch)
 	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period ontime: %llds  %1.0fl\n",channels[ch].Name,channels[ch].period_ontime+timeofactivechannel,1.0*channels[ch].period_volume/YF_DN32_PULSE_PER_LITER);
     sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period sink time: %ds\n",channels[ch].Name,channels[ch].last_sink_time);
     sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period sink volume: %1.1fs\n",channels[ch].Name,channels[ch].last_sink_volume);
-    sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:suspend count: %ds\n",channels[ch].Name,channels[ch].suspend_cnt);
+    sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:suspend count: %d\n",channels[ch].Name,channels[ch].suspend_cnt);
 
 
 	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"status:%s\n",str_states[channels[ch].channel_state]);
@@ -1773,12 +1773,13 @@ void switch_channel(int ch, T_states new_status)
 		channels[ch].period_ontime=0;
 		channels[ch].period_volume=0;
 		channels[ch].ontime_of_period_added_to_daily=false;
+		channels[ch].suspend_cnt=0;
 	 }
 	 
 
 	
 	 
-	 if(new_relay_status) {if (!is_channel_active(ch)) {channels[ch].last_switch_on_time=now;channels[ch].period_volume=0;}} // from OFF to ON
+	 if(new_relay_status) {if (!is_channel_active(ch)) {channels[ch].last_switch_on_time=now;}} // from OFF to ON
 	else if (is_channel_active(ch))  {channels[ch].period_ontime+=now-channels[ch].last_switch_on_time;} //from ON to OFF
 	
     if ((new_status==END) || (new_status==FINISHED))
