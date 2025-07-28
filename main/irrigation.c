@@ -488,8 +488,8 @@ void to_lower(const char *str, char *out_str)
  
  void Publish_file(char* filename)
 {
-    char buf_2read[1000];
-	char buf_2send[1000]="";
+    char buf_2read[512];
+	char buf_2send[512]="";
 	if (mqtt_connected)
 	{
 		FILE *ptr_file=fopen(filename,"r");
@@ -501,7 +501,7 @@ void to_lower(const char *str, char *out_str)
 					if (strlen(buf_2send)+strlen(buf_2read)+1>sizeof(buf_2send))
 					{
 						msg_id = my_esp_mqtt_client_publish(mqtt_client, "FILE", buf_2send, 0, 0, 0);   //Qos=1; retain=0
-					    buf_2send[0]=0;
+					    strcpy(buf_2send,buf_2read);
 					}
 					else 
 					{
