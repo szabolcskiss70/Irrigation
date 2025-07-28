@@ -744,7 +744,7 @@ void append_ontimes2string(int ch)
 	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s: Daily ontime: %llds  %1.0fl\n",channels[ch].Name,channels[ch].prev_daily_period_ontimes+timeofactivechannel,1.0*channels[ch].daily_volume/YF_DN32_PULSE_PER_LITER);
 	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period ontime: %llds  %1.0fl\n",channels[ch].Name,channels[ch].period_ontime+timeofactivechannel,1.0*channels[ch].period_volume/YF_DN32_PULSE_PER_LITER);
     sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period sink time: %ds\n",channels[ch].Name,channels[ch].last_sink_time);
-    sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period sink volume: %1.1fs\n",channels[ch].Name,channels[ch].last_sink_volume);
+    sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period sink volume: %1.1fl\n",channels[ch].Name,channels[ch].last_sink_volume);
     sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:suspend count: %d\n",channels[ch].Name,channels[ch].suspend_cnt);
 
 
