@@ -192,8 +192,9 @@ int SNTP_synchronized=0;
 bool FW_update_available=false;
 char* url_buf="";
 char* url_buf_szabolcskiss="http://szabolcskiss.ddns.net/irrigation.bin";
-char* url_buf_git="https://github.com/szabolcskiss70/irrigation/raw/main/release/irrigation.bin";
-char* OTA_SOURCE_URL="https://github.com/szabolcskiss70/irrigation/raw/main/release/irrigation.bin";
+char* url_buf_git_release="https://github.com/szabolcskiss70/irrigation/raw/main/release/irrigation.bin";
+char* url_buf_git_debug="https://github.com/szabolcskiss70/irrigation/raw/test_branch/build/irrigation.bin";
+char* OTA_SOURCE_URL="https://github.com/szabolcskiss70/irrigation/raw/test_branch/build/irrigation.bin";
 void ota_update_task(void *pvParameter);
 void switch_channel(int ch, T_states status);
 void Save_data_to_NVS();
@@ -877,7 +878,8 @@ bool LIFE_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 					esp_ota_mark_app_valid_cancel_rollback(); //validate the last OTA update
 					strcpy(MQTT_BLE_answer,"FIRMWARE/ROLLBACK CANCELLED AUTOMATICALLY"); 
 					my_esp_mqtt_client_publish(mqtt_client, "LIFE_LOOP", MQTT_BLE_answer, 0, 0, 0);   //Qos=0; retain=1
-				    firstrun=false;
+				    
+					firstrun=false;
 				   }
 
 				 }
@@ -978,8 +980,10 @@ bool FIRMWARE_SELECT_URL_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_
 						case '?': break; // query actual value		
 						case 'S': OTA_SOURCE_URL=url_buf_szabolcskiss;
 								break;	
-						case 'G': OTA_SOURCE_URL=url_buf_git;
-								break;		
+						case 'G': OTA_SOURCE_URL=url_buf_git_release;
+								break;
+						case 'D': OTA_SOURCE_URL=url_buf_git_debug;
+								break;				
 						case 'N':OTA_SOURCE_URL=url_buf;
 								break;		
 						default: OTA_SOURCE_URL="Invalid source";
@@ -2217,6 +2221,24 @@ void read_ACS71020_register2(int reg_addr,long value)
 	default: break;
 	}
 }
+
+
+void testValveSwitching()
+{
+ char message[128]="";	
+ double p_standby=    MeasuredValue(ACS71020_address_default, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs);
+ double p_valve;
+ for(int ch=0;ch<CHANNEL_NUM;ch++)
+ {
+   writeDO(channels[ch].Valve_GPIO_OUTPUT, true);
+   vTaskDelay(3*1000 / portTICK_PERIOD_MS);
+   p_valve=MeasuredValue(ACS71020_address_default, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs)-p_standby; 
+   writeDO(channels[ch].Valve_GPIO_OUTPUT, false);
+   sprintf(message+strlen(message),"Ch:%d, Valve power:%0.1lfW\n",ch,p_valve);
+ }
+ if (mqtt_connected) my_esp_mqtt_client_publish(mqtt_client, "VALVE_TEST", message, 0, 0, 0);   //Qos=0; retain=0
+}
+
 
 
 bool isSingleChannelTurnedON(int ch)
@@ -3599,10 +3621,15 @@ void app_main()
 	if (getfilesize(LOG_FILE)>1E6) remove(LOG_FILE);
 	if (getfilesize(IRR_FILE)>0.5E6) remove(IRR_FILE);
 
+
     if (run_mode & (1<<MAIN_TASK))          xTaskCreatePinnedToCore(&mainTask, "mainTask", 4096, NULL, 5, NULL, 0);
     if (run_mode & (1<<POWERMETER_TASK))	xTaskCreatePinnedToCore(&PowerMeterTask, "PowerMeterTask", 4096, NULL, 5, NULL, 0);
 	
 
+
+
+    xEventGroupWaitBits(s_wifi_event_group, MQTT_CONNECTED_BIT, false, false, 120*1000 / portTICK_PERIOD_MS); 
+	testValveSwitching();
 
 	 append_log(LOG_FILE,"Rebooted. run_mode=%d\n",run_mode); 
 	//append_log(IRR_FILE,"append test. run_mode=%d\n",run_mode); 
