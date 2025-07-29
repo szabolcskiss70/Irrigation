@@ -10,6 +10,7 @@
 #define Volume_measure_interval_us 11E6 
 #define YF_DN32_PULSE_PER_LITER	27
 
+typedef enum {PUMP1,PUMP2,BOTH}T_pump_list;
 typedef enum {P_DISABLED, P_SUSPENDED,P_DELAY,P_OFF,P_RESUMED,P_ON} T_pump_states;
 
 typedef struct{
@@ -17,6 +18,7 @@ typedef struct{
 	int pump_restart_delay; //minimum time for pump restart from pump OFF
 	bool prio; //priority of pump
 	bool switchbackifavailable; // cwitch back to prio pump if possible
+	float max_current;
 	T_pump_states status; //actual pump status
 	int GPIO_PUMP; //GPIO of pump relay
 	int GPIO_PROT; //gpio of protection imput
@@ -40,7 +42,7 @@ typedef struct{
 //extern T_pump pump[2];
 extern int pump_num;
 
-void switch_pump(bool on_state);
+void switch_pump(bool on_state, T_pump_list assigned_pump);
 void switch_pump_ch(int id,bool on_state);
 void enable_pump(int ch,bool enable);
 void init_pump(int id, int GPIO_PUMP, int GPIO_PROT,int GPIO_CNT,bool prio, bool switchbackifresumed);
@@ -58,10 +60,13 @@ bool getPUMP_prio(int id);
 void setPUMP_prio(int id, bool val);
 bool getPUMP_switchbackifavailable(int id);
 void setPUMP_switchbackifavailable(int id, bool val);
+void set_restart_delay(int id, int restart_delay);
+int get_restart_delay(int id);
 void switch_pump_id_to_state(int id, T_pump_states new_state);
 int getsinktime(int id);
 int getfilltime(int id);
 float getsinkvolume(int id);
-
+float get_max_current(int id);
+void  set_max_current(int id, float imax);
 
 #endif

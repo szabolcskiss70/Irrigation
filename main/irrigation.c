@@ -185,7 +185,7 @@ static EventGroupHandle_t s_wifi_event_group;
 
 
 T_measure_mode measure_mode=OFF;
-int pump_restart_delay=10;
+//int pump_restart_delay=10;
 
 
 int SNTP_synchronized=0;
@@ -205,8 +205,8 @@ char MQTT_BLE_answer[2048]="";
 
 
 void mainTask(void *pvParameters);
-static SemaphoreHandle_t mutex;
-static SemaphoreHandle_t mutex_mqtt_ble;
+static SemaphoreHandle_t I2C_mutex;
+static SemaphoreHandle_t mqtt_ble_mutex;
 static SemaphoreHandle_t MAIN_TASK_mutex;
 
 static const char *TAG = "irrigation";
@@ -343,6 +343,8 @@ typedef struct{
 } T_chedule_data;
 
 
+
+
 #define CHANNEL_NUM 3
 #define PERIODS 10
 typedef struct{
@@ -368,6 +370,7 @@ typedef struct{
 	int last_sink_time;
 	float last_sink_volume;
 	int last_sink_flowmeter_counts;
+    T_pump_list assigned_pump;
 } T_channel;
 T_channel channels[CHANNEL_NUM];
 
@@ -393,6 +396,7 @@ void init_channel(int ch, char* name, int GPIO, bool fix_preassure)
 	for(int i=STARTED; i<=NOREQUEST;i++) channels[ch].status_change_time[i]=-1;
 	channels[ch].requested_ontime=30; //[min]
 	channels[ch].manual_mode=false;
+	channels[ch].assigned_pump=BOTH;
 	int suspend_cnt=0;
 }
 
@@ -594,9 +598,9 @@ void Write_Msg_toDisplay(int line, char *Msg)
 	strcpy(message,Msg);
 	while (strlen(message)<16) strcat(message," ");
 
-	xSemaphoreTake(mutex, portMAX_DELAY);
+	xSemaphoreTake(I2C_mutex, portMAX_DELAY);
      ssd1306_display_text(&Display, line, message, strlen(message), false);	
-	xSemaphoreGive(mutex);
+	xSemaphoreGive(I2C_mutex);
 }
 
 
@@ -782,9 +786,9 @@ int update_item(char * ldata,char* item,int data_addr)
 	if(sscanf(ldata,formatstring,&regValue)==1)
 			 {
 				 eeprom_reg_t reg; 
-				 xSemaphoreTake(mutex, portMAX_DELAY);
+				 xSemaphoreTake(I2C_mutex, portMAX_DELAY);
 	     		  reg.frame.value = read_ACS71020_register(ACS71020_address_default, data_addr, 0xffffffff, 0,0);
-				 xSemaphoreGive(mutex); 
+				 xSemaphoreGive(I2C_mutex); 
 				 
 				 switch(data_addr)
 				 {
@@ -848,11 +852,11 @@ int update_item(char * ldata,char* item,int data_addr)
 									
 				 }
 				 
-				 xSemaphoreTake(mutex, portMAX_DELAY);
+				 xSemaphoreTake(I2C_mutex, portMAX_DELAY);
 				  write_ACS71020(ACS71020_address_default, 0x2F, 0x4f70656E); //enter to customer mode
 				  write_ACS71020(ACS71020_address_default, data_addr+0x10, reg.frame.fields.eeprom_data); //write shadow
 				  write_ACS71020(ACS71020_address_default, data_addr, reg.frame.fields.eeprom_data); //write EEPROM	
-				 xSemaphoreGive(mutex); 
+				 xSemaphoreGive(I2C_mutex); 
 				 my_esp_mqtt_client_publish(mqtt_client, "ACS71020", "shadow + eeprom writen", 0, 0, 0);   //Qos=0; retain=0	 
 				 return 1;
 			 }
@@ -1063,28 +1067,65 @@ bool PUMP_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
     if (strcmp(wilcarded_topic[1],"PRIO")==0)
 	{
  
-				 if(strcmp(ldata,"ON")==0) switch_pump(true);
-                 else switch_pump(false);
+				 if(strcmp(ldata,"ON")==0) switch_pump(true,BOTH);
+                 else switch_pump(false,BOTH);
 				 PUMP___CB(ltopic,  ldata,  MQTT,wilcarded_topic);
 	}
     else if ((strlen(wilcarded_topic[1])==1) && (sscanf(wilcarded_topic[1],"%d",&ch)==1) && (ch>=1) && (ch<=2))
 	{
 		ch--;
 		if(strcmp(ldata,"?")==0); // just query status by GetPumpStatusString
-		else if(strcmp(ldata,"ON")==0) switch_pump_id_to_state(ch,P_ON);
-		else if (strcmp(ldata,"DISABLE")==0) enable_pump(ch,false);
-		else if (strcmp(ldata,"ENABLE")==0) enable_pump(ch,true);
-		else if (strcmp(ldata,"SET_PRIO")==0) setPUMP_prio(ch,true);
-		else if (strcmp(ldata,"SET_SWITCHBACK")==0) setPUMP_switchbackifavailable(ch,true);
-		else if (strcmp(ldata,"DEL_SWITCHBACK")==0) setPUMP_switchbackifavailable(ch,false);
+		else if(strcmp(ldata,"ON")==0) switch_pump_id_to_state(ch,P_ON);	
 		else if(strcmp(ldata,"TIMES")==0) getpumptimechanges(ch,MQTT_BLE_answer+strlen(MQTT_BLE_answer),sizeof(MQTT_BLE_answer)-strlen(MQTT_BLE_answer)-1);
         else switch_pump_id_to_state(ch,P_OFF);
-
 		GetPumpStatusString(ch,MQTT_BLE_answer+strlen(MQTT_BLE_answer),sizeof(MQTT_BLE_answer)-strlen(MQTT_BLE_answer)-1);
     }
     return true;
    
 }
+
+bool PUMP_PARAM_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
+{
+  int ch;	
+  if ((strlen(wilcarded_topic[1])==1) && (sscanf(wilcarded_topic[1],"%d",&ch)==1) && (ch>=1) && (ch<=2))
+	{
+		ch--;
+		if (strcmp(wilcarded_topic[0],"DISABLE")==0) enable_pump(ch,false);
+		else if (strcmp(wilcarded_topic[0],"ENABLE")==0) enable_pump(ch,true);
+		else if (strcmp(wilcarded_topic[0],"SET_PRIO")==0) setPUMP_prio(ch,true);
+		else if (strcmp(wilcarded_topic[0],"SET_SWITCHBACK")==0) setPUMP_switchbackifavailable(ch,true);
+		else if (strcmp(wilcarded_topic[0],"DEL_SWITCHBACK")==0) setPUMP_switchbackifavailable(ch,false);
+		else if (strcmp(wilcarded_topic[0],"RESTART_DELAY")==0)
+		{
+				int intval;
+				 if(sscanf(ldata,"%d",&intval)==1) 
+				 {
+					 if ((intval>=0) && (intval<=60)) 
+					 {
+						 set_restart_delay(ch,intval);
+						 Save_data_to_NVS();
+						 sprintf(MQTT_BLE_answer,"pump_restart_delay pump%d: %dmin",ch,intval); 
+					 }
+					 else sprintf(MQTT_BLE_answer,"%s %s", "pump_restart_delay","Out of range"); 
+				 }
+				 else sprintf(MQTT_BLE_answer,"%s %s", "pump_restart_delay","invalid format!"); 
+		}
+		
+		
+		
+		
+		
+		
+		
+		
+		GetPumpStatusString(ch,MQTT_BLE_answer+strlen(MQTT_BLE_answer),sizeof(MQTT_BLE_answer)-strlen(MQTT_BLE_answer)-1);
+
+	}
+	return true;
+}
+
+
+
 bool ACS71020_read_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])			
 
 			{
@@ -1099,9 +1140,9 @@ bool ACS71020_read_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[
 				 case 2: shift_left=0;    [[fallthrough]];
 				 case 3: shift_right=0;   [[fallthrough]];
 				 case 4: 
-						xSemaphoreTake(mutex, portMAX_DELAY);
+						xSemaphoreTake(I2C_mutex, portMAX_DELAY);
 							val= read_ACS71020_register(ACS71020_address_default, reg, mask, shift_left,shift_right);
-						xSemaphoreGive(mutex); 		
+						xSemaphoreGive(I2C_mutex); 		
 						 sprintf(strval,"%x:%lx",reg,val);
 						 my_esp_mqtt_client_publish(mqtt_client, "ACS71020", strval, 0, 0, 0);   //Qos=0; retain=0	
 						 read_ACS71020_register2(reg,val);
@@ -1121,20 +1162,20 @@ bool ACS71020_write_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic
 			 {
 				if ((data_addr>=0x1B) && (data_addr<=0x1F)) 
 				{//write SHADOW
-				    xSemaphoreTake(mutex, portMAX_DELAY);
+				    xSemaphoreTake(I2C_mutex, portMAX_DELAY);
 					 write_ACS71020(ACS71020_address_default, 0x2F, 0x4f70656E); //enter to customer mode
 					 write_ACS71020(ACS71020_address_default, data_addr, regValue); //write shadow
-					 xSemaphoreGive(mutex); 
+					 xSemaphoreGive(I2C_mutex); 
 					my_esp_mqtt_client_publish(mqtt_client, "ACS71020", "shadow writen", 0, 0, 0);   //Qos=0; retain=0	
 				    if(!MQTT) sprintf(MQTT_BLE_answer,"%s {%s}", "ACS71020","shadow writen"); 
 				}	
 				else if ((data_addr>=0x0B) && (data_addr<=0x0F)) 
 				{//write SHADOW + EEPROM
-					xSemaphoreTake(mutex, portMAX_DELAY);
+					xSemaphoreTake(I2C_mutex, portMAX_DELAY);
 					 write_ACS71020(ACS71020_address_default, 0x2F, 0x4f70656E); //enter to customer mode
 					 write_ACS71020(ACS71020_address_default, data_addr+0x10, regValue); //write shadow
 				     write_ACS71020(ACS71020_address_default, data_addr, regValue); //write EEPROM*/	
-					xSemaphoreGive(mutex); 
+					xSemaphoreGive(I2C_mutex); 
 					my_esp_mqtt_client_publish(mqtt_client, "ACS71020", "shadow + eeprom writen", 0, 0, 0);   //Qos=0; retain=0	
 				    if(!MQTT) sprintf(MQTT_BLE_answer,"%s {%s}", "ACS71020","shadow + eeprom writen"); 
 				}					
@@ -1320,22 +1361,7 @@ bool restart_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32]
 				else if(strcmp(ldata,"WIFI")==0) 	 reboot_WIFI_STICK();	
 			return true;					
 			}
-bool pump_restart_delay_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])			
-			{
-				int intval;
-				 if(sscanf(ldata,"%d",&intval)==1) 
-				 {
-					 if ((intval>=0) && (intval<=60)) 
-					 {
-						 pump_restart_delay=intval;
-						 Save_data_to_NVS();
-						 sprintf(MQTT_BLE_answer,"%s {%d}", "pump_restart_delay",pump_restart_delay); 
-					 }
-					 else sprintf(MQTT_BLE_answer,"%s %s", "pump_restart_delay","Out of range"); 
-				 }
-				 else sprintf(MQTT_BLE_answer,"%s %s", "pump_restart_delay","invalid format!"); 
-			return true;	 
-			}
+		
 bool measure_mode_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])			
 			{
 				 if(strcmp(ldata,"LEVEL")==0)  measure_mode=LEVEL;
@@ -1442,7 +1468,9 @@ bool LIST_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 	return true;
 }
 
-bool CHANNEL_SET_NAME_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
+
+
+bool CHANNEL_PARAM_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 {
 	printf("%s",wilcarded_topic[1]);
 	int ch=get_Channel_from_wildcarded(wilcarded_topic);
@@ -1452,14 +1480,22 @@ bool CHANNEL_SET_NAME_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_top
 		return false;
 	 }
 
-	if ((strlen(ldata)>0) && (strlen(ldata)<=sizeof(channels[ch].Name)-1)) 
+    if (strcmp(wilcarded_topic[0],"NAME")==0)
 	{
-		strcpy(channels[ch].Name,ldata);
-		Save_data_to_NVS();
-		sprintf(MQTT_BLE_answer,"Channel name (%s) for CH%d saved.}", channels[ch].Name,ch);
+			if ((strlen(ldata)>0) && (strlen(ldata)<=sizeof(channels[ch].Name)-1)) 
+			{
+				strcpy(channels[ch].Name,ldata);
+				Save_data_to_NVS();
+				sprintf(MQTT_BLE_answer,"Channel name (%s) for CH%d saved.}", channels[ch].Name,ch);
 
+			}
+			else sprintf(MQTT_BLE_answer,"Invalid length (1..7) {%s}", ldata);
 	}
-	else sprintf(MQTT_BLE_answer,"Invalid length (1..7) {%s}", ldata);
+	if (strcmp(wilcarded_topic[0],"PUMP")==0)
+	{
+	   int intval;
+	   if ((sscanf(ldata,"%d",&intval)==1) && ((intval>=PUMP1) && (intval<=BOTH))) channels[ch].assigned_pump=intval;
+	}
 	return true;
 }	
 
@@ -1476,6 +1512,8 @@ IRRIGATION/CHANNEL/x/REQUEST {STARTED,RESUMED,INIT,ENABLED,DISABLED,SUSPENDED,DE
 IRRIGATION/CHANNEL/x/SCHEDULE/PERIODx {10:00-12:00 [+++++++] 30 2000} -add new schedule period 30min 2000l\n\
 IRRIGATION/CHANNEL/x/SCHEDULE/? {}   -list all programmed periods\n\
 IRRIGATION/CHANNEL/x/STATISTIC {} -get statistic\n\
+IRRIGATION/CHANNEL/x/PARAM/NAME {new name} -set channel name\n\
+IRRIGATION/CHANNEL/x/PARAM/PUMP {0|1|2} -set assigned pump 2:BOTH\n\
 IRRIGATION/PUMP/+/REQUEST +:PRIO|1|2 {ON|OFF|DISABLE|ENABLE|SET_PRIO|SET_SWITCHBACK|DEL_SWITCHBACK} -switch PUMP ON|OFF\n\
 IRRIGATION/PUMP/? {} -query pump status\n\
 ";		
@@ -1483,7 +1521,7 @@ IRRIGATION/PUMP/? {} -query pump status\n\
 				  my_esp_mqtt_client_publish(mqtt_client, "MEASURE/commands", message, 0, 0, 0);   //Qos=0; retain=0	
 				 
 				 vTaskDelay(3*1000 / portTICK_PERIOD_MS);	
-message="IRRIGATION/PUMP_RESTART_DELAY {10min} -set pump restart delay\n\
+message="IRRIGATION/PUMP/x/PARAM/RESTART_DELAY {10min} -set pump restart delay\n\
 IRRIGATION/LEVEL/? {} -query water level\n\
 IRRIGATION/TIME/? {} -query TIME\n\
 IRRIGATION/TEMP/? {} -query temperature sensor\n\
@@ -1527,8 +1565,8 @@ ACS71020/WRITE {0xhex_address=0xhex_value}";
 return true;
 }
 
-char* subscribe_topics[]=                   {"LIFE" ,"FIRMWARE/URL" ,"FIRMWARE/SELECT_URL" ,"FIRMWARE/VERSION" ,"FIRMWARE/ROLLBACK" ,"CHANNEL/+/REQUEST"      ,"CHANNEL/+/STATISTIC"      ,"CHANNEL/+/SCHEDULE/#"    ,"RESTART" ,"PUMP_RESTART_DELAY","MEASURE_MODE" ,"LEVEL/?" ,"TIME/?"  ,"ACS71020/READ" ,"ACS71020/WRITE" ,"TEMP/?" ,"HELP" ,"PUMP/+/REQUEST" ,"PUMP/?" ,"RUN_MODE" ,"RUN_MODE/?","LIST","CHANNEL/+/SET_NAME","CHANNEL/+/TIMES","DEBUG"};
-T_MQTT_Sub_Callback *MQTT_Sub_Callbacks[]=  {LIFE_CB,FIRMWARE_URL_CB,FIRMWARE_SELECT_URL_CB,FIRMWARE_VERSION_CB,FIRMWARE_ROLLBACK_CB,CHANNEL_request_CB,CHANNEL_statistic_CB,CHANNEL_schedule_CB,restart_CB,pump_restart_delay_CB,measure_mode_CB,LEVEL___CB,TIME___CB,ACS71020_read_CB,ACS71020_write_CB,temp___CB,help_CB,PUMP_CB,PUMP___CB,run_mode_CB,run_mode___CB,LIST_CB,CHANNEL_SET_NAME_CB,CHANNEL_TIMES_CB,DEBUG_CB}; 
+char* subscribe_topics[]=                   {"LIFE" ,"FIRMWARE/URL" ,"FIRMWARE/SELECT_URL" ,"FIRMWARE/VERSION" ,"FIRMWARE/ROLLBACK" ,"CHANNEL/+/REQUEST"      ,"CHANNEL/+/STATISTIC"      ,"CHANNEL/+/SCHEDULE/#"    ,"RESTART" ,"MEASURE_MODE" ,"LEVEL/?" ,"TIME/?"  ,"ACS71020/READ" ,"ACS71020/WRITE" ,"TEMP/?" ,"HELP" ,"PUMP/+/REQUEST" ,"PUMP/?" ,"RUN_MODE" ,"RUN_MODE/?","LIST","CHANNEL/+/PARAM/#","CHANNEL/+/TIMES","DEBUG","PUMP/+/PARAM/#"};
+T_MQTT_Sub_Callback *MQTT_Sub_Callbacks[]=  {LIFE_CB,FIRMWARE_URL_CB,FIRMWARE_SELECT_URL_CB,FIRMWARE_VERSION_CB,FIRMWARE_ROLLBACK_CB,CHANNEL_request_CB,CHANNEL_statistic_CB,CHANNEL_schedule_CB,restart_CB,measure_mode_CB,LEVEL___CB,TIME___CB,ACS71020_read_CB,ACS71020_write_CB,temp___CB,help_CB,PUMP_CB,PUMP___CB,run_mode_CB,run_mode___CB,LIST_CB,CHANNEL_PARAM_CB,CHANNEL_TIMES_CB,DEBUG_CB,PUMP_PARAM_CB}; 
 
 
 bool Process_EVENT_DATA(char* ltopic, char* ldata, bool MQTT)
@@ -1647,9 +1685,9 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 			ldata[event->data_len]=0;
 			ESP_LOGI(TAG, "%s",ltopic);
 			ESP_LOGI(TAG, "%s",ldata);
-	xSemaphoreTake(mutex_mqtt_ble, portMAX_DELAY);
+	xSemaphoreTake(mqtt_ble_mutex, portMAX_DELAY);
 	 if(Process_EVENT_DATA(ltopic,ldata, true)) printf("Process_EVENT_DATA returned true");
-	xSemaphoreGive(mutex_mqtt_ble);
+	xSemaphoreGive(mqtt_ble_mutex);
 
 
       
@@ -1692,7 +1730,7 @@ void switch_pump_for_channel(int channel,int status)
 {
  if (status==1)	
  {
-	    switch_pump(true);
+	    switch_pump(true,channels[channel].assigned_pump);
 	    channels[channel].Channel_pump_ON=true; 
  }
  else
@@ -1703,7 +1741,7 @@ void switch_pump_for_channel(int channel,int status)
 		case DELAY:  break;
 		default:
 			channels[channel].Channel_pump_ON=false;  
-		    switch_pump(false);		
+		    switch_pump(false,channels[channel].assigned_pump);		
 	 }
  }
 }
@@ -2542,7 +2580,7 @@ void mainTask(void *pvParameters){
 if (run_mode & (1<<MEASURE_POWER)) 
 {
 char message[128];
-xSemaphoreTake(mutex, portMAX_DELAY);
+xSemaphoreTake(I2C_mutex, portMAX_DELAY);
 		
 /*	
 double i=    MeasuredValue(ACS71020_address_default, 0x2B, 0x0001ffff,15, 0,15,30.0);
@@ -2570,7 +2608,7 @@ double p=    MeasuredValue(ACS71020_address_default, 0x28, 0x0001ffff,15, 0,15,3
 //ESP_LOGI(TAG, "p= %lf", p);
 
 
-xSemaphoreGive(mutex);
+xSemaphoreGive(I2C_mutex);
 
  sprintf(message,"%0.1lfV %0.1lfA %0.1lfW",urms,irms,p);
  Write_Msg_toDisplay(3,message);
@@ -2904,30 +2942,31 @@ void Load_data_from_NVS()
 	 long int intval;
     if((ret=nvs_open("my_NVS", NVS_READWRITE, &nvs_handle))!=ESP_OK) ESP_LOGI(TAG, "NVS open failed. %d",ret);
 	
-	if(nvs_get_i32(nvs_handle, "pump_delay",&intval)==ESP_OK) pump_restart_delay=(int)intval;
-	ESP_LOGI(TAG, "pump_restart_delay:%dmin",pump_restart_delay);
-	
 	if(nvs_get_i32(nvs_handle, "run_mode",&intval)==ESP_OK) run_mode=(int)intval | (1<<USE_BLE) | (1<<USE_WIFI);;
 	ESP_LOGI(TAG, "run_mode:%d",run_mode);
-	
-	nvs_set_i32(nvs_handle, "PUMP1_DISABLED", isPUMP_disabled(0)?1:0);  
-    nvs_set_i32(nvs_handle, "PUMP2_DISABLED", isPUMP_disabled(1)?1:0); 
 
-    nvs_get_i32(nvs_handle, "PUMP1_DISABLED", &intval);	
-	enable_pump(0, intval?false:true);
-    nvs_get_i32(nvs_handle, "PUMP2_DISABLED", &intval);	
-	enable_pump(1, intval?false:true);
+    for (ch=0;ch<pump_num;ch++)
+   {
+     char keyName[32];
+     uint8_t uint8val;
+	 uint16_t uint16val;
+     sprintf(keyName,"P%1.1d_DIS",ch);
+	 if (nvs_get_u8(nvs_handle, keyName, &uint8val)==ESP_OK) enable_pump(ch, intval?false:true);
+	 
+	 sprintf(keyName,"P%1.1d_DELAY",ch);
+	 if (nvs_get_u8(nvs_handle, keyName,&uint8val)==ESP_OK) set_restart_delay(ch,intval);
 
-   nvs_get_i32(nvs_handle, "PUMP1_PRIO", &intval);
-   setPUMP_prio(0,intval==1);
-   nvs_get_i32(nvs_handle, "PUMP2_PRIO", &intval);
-   setPUMP_prio(1,intval==1);  
+     sprintf(keyName,"P%1.1d_PRIO",ch);
+     if (nvs_get_u8(nvs_handle, keyName, &uint8val)==ESP_OK) setPUMP_prio(ch,intval==1);
 
-   nvs_get_i32(nvs_handle, "PUMP1_SWITCHBACK", &intval); 
-   setPUMP_switchbackifavailable(0,intval==1); 
-   nvs_get_i32(nvs_handle, "PUMP2_SWITCHBACK", &intval); 
-   setPUMP_switchbackifavailable(1,intval==1); 
-	
+	 sprintf(keyName,"P%1.1d_SWBCK",ch);
+	 if (nvs_get_u8(nvs_handle, keyName, &uint8val)==ESP_OK)  setPUMP_switchbackifavailable(ch,intval==1);   
+
+	 sprintf(keyName,"P%1.1d_IMAXmA",ch);
+	 if (nvs_get_u16(nvs_handle, keyName, &uint16val)==ESP_OK)  set_max_current(ch,intval/1000);   
+
+   }
+
 	for (ch=0;ch<CHANNEL_NUM;ch++)
     {
 	  char keyName[32];   //CHx_x 
@@ -2939,8 +2978,10 @@ void Load_data_from_NVS()
 	  ESP_LOGI(TAG, "KEY:%s",keyName);
 	  nvs_get_i32(nvs_handle, keyName, &keyvalue);	
 	  channels[ch].channel_disabled=(int)keyvalue;
-		
-	 
+
+	  sprintf(keyName,"CH%1.1d_assPUMP",ch);
+	  if (nvs_get_i32(nvs_handle, keyName, &keyvalue)==ESP_OK) channels[ch].assigned_pump=(int)keyvalue;  
+		 
      for(i=0;i<PERIODS;i++)
      {
 	  sprintf(keyName,"CH%1.1d_ON_%1.1d",ch,i);
@@ -2980,17 +3021,28 @@ void Save_data_to_NVS()
 		
    // TEST_ESP_OK(nvs_erase_all(nvs_handle));
    
-    nvs_set_i32(nvs_handle, "pump_delay",pump_restart_delay);
 	nvs_set_i32(nvs_handle, "run_mode",run_mode);
-	
-   nvs_set_i32(nvs_handle, "PUMP1_DISABLED", isPUMP_disabled(0)?1:0);  
-   nvs_set_i32(nvs_handle, "PUMP2_DISABLED", isPUMP_disabled(1)?1:0);   
+  
+   for (ch=0;ch<pump_num;ch++)
+   {
+     char keyName[32];
 
-   nvs_set_i32(nvs_handle, "PUMP1_PRIO", getPUMP_prio(0)?1:0);  
-   nvs_set_i32(nvs_handle, "PUMP2_PRIO", getPUMP_prio(1)?1:0);  
+     sprintf(keyName,"P%1.1d_DIS",ch);
+	 nvs_set_u8(nvs_handle, keyName, isPUMP_disabled(ch)?1:0); 
+	 
+	 sprintf(keyName,"P%1.1d_DELAY",ch);
+	 nvs_set_u8(nvs_handle, keyName,(uint8_t)get_restart_delay(ch));
 
-   nvs_set_i32(nvs_handle, "PUMP1_SWITCHBACK", getPUMP_switchbackifavailable(0)?1:0);  
-   nvs_set_i32(nvs_handle, "PUMP2_SWITCHBACK", getPUMP_switchbackifavailable(1)?1:0); 
+     sprintf(keyName,"P%1.1d_PRIO",ch);
+     nvs_set_u8(nvs_handle, keyName, getPUMP_prio(ch)?1:0);  
+
+	 sprintf(keyName,"P%1.1d_SWBCK",ch);
+	 nvs_set_u8(nvs_handle, keyName, (uint8_t)(ch)?1:0);   
+
+	 sprintf(keyName,"P%1.1d_IMAXmA",ch);
+	 nvs_set_u16(nvs_handle, keyName, (uint16_t)(1000.0*get_max_current(ch)));   
+
+   }
 
    for (ch=0;ch<CHANNEL_NUM;ch++)
    {
@@ -2999,6 +3051,8 @@ void Save_data_to_NVS()
 	 nvs_set_str(nvs_handle, keyName, channels[ch].Name);   
 	 sprintf(keyName,"CH%1.1d_DISABLED",ch);
 	 nvs_set_i32(nvs_handle, keyName, channels[ch].channel_disabled);   
+     sprintf(keyName,"CH%1.1d_assPUMP",ch);
+	 nvs_set_i32(nvs_handle, keyName, channels[ch].assigned_pump);  
     for(i=0;i<PERIODS;i++)
     {
  	
@@ -3063,9 +3117,9 @@ void PowerMeterTask(void *pvParameters){
     while(1){
 
         vTaskDelayUntil( &xLastWakeTime, xFrequency);
-		xSemaphoreTake(mutex, portMAX_DELAY);
+		xSemaphoreTake(I2C_mutex, portMAX_DELAY);
 		  powerconsumptionWs+=    MeasuredValue(ACS71020_address_default, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs)*60.0;
-		xSemaphoreGive(mutex); 
+		xSemaphoreGive(I2C_mutex); 
   
     }
 }
@@ -3288,7 +3342,7 @@ static int device_write(uint16_t conn_handle, uint16_t attr_handle, struct ble_g
 	printf("strdata: %s\n", strdata);
     printf("Topic: %s Data: %s\n", ltopic, ldata);
     //printf("%d\n",strcmp(data, (char *)"LIGHT ON")==0);
-    xSemaphoreTake(mutex_mqtt_ble, portMAX_DELAY);
+    xSemaphoreTake(mqtt_ble_mutex, portMAX_DELAY);
 
     if (sscanf(strdata, "RUN_MODE=%d",&intvalue)==1)
     {
@@ -3335,7 +3389,7 @@ static int device_write(uint16_t conn_handle, uint16_t attr_handle, struct ble_g
     }
     
 
-	xSemaphoreGive(mutex_mqtt_ble);
+	xSemaphoreGive(mqtt_ble_mutex);
 
 
 
@@ -3523,8 +3577,8 @@ void app_main()
 	init_channel(2,"CH2",GPIO_OUTPUT_OUT_4,true);
 
 //	delete_all_chedules();
-    mutex = xSemaphoreCreateMutex();
-	mutex_mqtt_ble = xSemaphoreCreateMutex();
+    I2C_mutex = xSemaphoreCreateMutex();
+	mqtt_ble_mutex = xSemaphoreCreateMutex();
 	MAIN_TASK_mutex = xSemaphoreCreateMutex();
 
 
