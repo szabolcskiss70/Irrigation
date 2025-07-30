@@ -226,7 +226,7 @@ const int DS_PIN = 17; //GPIO where you connected ds18b20
 float temperature=0;
 
 double powerconsumptionWs=0;
-
+time_t time2nextperiodstart=0;
 esp_mqtt_client_handle_t mqtt_client;
 int mqtt_connected = 0;
 
@@ -320,7 +320,7 @@ static void print_char_val_type(esp_adc_cal_value_t val_type)
         printf("Characterized using Default Vref\n");
     }
 }*/
-
+void testValveSwitching();
 
 typedef struct{
 	int32_t on_time;
@@ -482,7 +482,8 @@ void to_lower(const char *str, char *out_str)
  void Publish_file(char* filename)
 {
     char buf_2read[512];
-	char buf_2send[512]="";
+	char buf_2send[512];
+	buf_2send[0]=0;
 	if (mqtt_connected)
 	{
 		FILE *ptr_file=fopen(filename,"r");
@@ -490,22 +491,20 @@ void to_lower(const char *str, char *out_str)
 		{
 			while (fgets(buf_2read,sizeof(buf_2read), ptr_file)!=NULL) 	
 			{
-					int msg_id;
+			 int msg_id;
 
-					msg_id =my_esp_mqtt_client_publish(mqtt_client, "FILE", buf_2read, 0, 0, 0);   //Qos=1; retain=0
-					vTaskDelay(1000 / portTICK_PERIOD_MS);
-					/*  
-					if (strlen(buf_2send)+strlen(buf_2read)+1>sizeof(buf_2send))
-					{
-						msg_id = my_esp_mqtt_client_publish(mqtt_client, "FILE", buf_2send, 0, 0, 0);   //Qos=1; retain=0
-					    strcpy(buf_2send,buf_2read);
-					}
-					else 
-					{
-					 strcat(buf_2send,buf_2read);
-					}*/
+			 //msg_id =my_esp_mqtt_client_publish(mqtt_client, "FILE", buf_2read, 0, 0, 0);   //Qos=1; retain=0
+			 vTaskDelay(200 / portTICK_PERIOD_MS);
+					 
+			 if (strlen(buf_2send)+strlen(buf_2read)+2>sizeof(buf_2send)) 
+			 {
+				msg_id = my_esp_mqtt_client_publish(mqtt_client, "FILE", buf_2send, 0, 0, 0);   //Qos=1; retain=0
+			    buf_2send[0]=0;
+			 }
+			 strcat(buf_2send,buf_2read);
+			 strcat(buf_2send,"\n");
 			}
-			//if (strlen(buf_2send)) my_esp_mqtt_client_publish(mqtt_client, "FILE", buf_2send, 0, 0, 0);   //Qos=1; retain=0
+			if (strlen(buf_2send)) my_esp_mqtt_client_publish(mqtt_client, "FILE", buf_2send, 0, 0, 0);   //Qos=1; retain=0
 			
 			fclose(ptr_file);
 	    }
@@ -957,6 +956,14 @@ bool DEBUG_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 	{
 		esp_log_level_set("*", log_level);
 		sprintf(MQTT_BLE_answer,"log level=%d",log_level);
+	}
+    else if (strcmp(ldata,"GET NEXT")==0)
+	{
+     sprintf(MQTT_BLE_answer,"time to next schedule:%llds",time2nextperiodstart);
+	}
+	else if (strcmp(ldata,"VALVE CHECK")==0)
+	{
+     testValveSwitching();
 	}
 	else  strcpy(MQTT_BLE_answer,"Invalid parameter!");
 	return true;
@@ -2266,6 +2273,7 @@ void testValveSwitching()
 {
  char message[128]="";	
  xSemaphoreTake(I2C_mutex, portMAX_DELAY);
+  init_ACS71020(Display._i2c_bus_handle,ACS71020_address_default);
   double p_standby=    MeasuredValue(ACS71020_address_default, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs);
  xSemaphoreGive(I2C_mutex); 
  double p_valve;
@@ -2301,7 +2309,7 @@ void mainTask(void *pvParameters){
   int ch,i;
   time_t time_at_start;
   time_t runtime=0;
-  time_t time2nextperiodstart=0;
+  time2nextperiodstart=0;
   
   xSemaphoreTake(MAIN_TASK_mutex, portMAX_DELAY);
 
