@@ -2296,6 +2296,7 @@ void mainTask(void *pvParameters){
   int ch,i;
   time_t time_at_start;
   time_t runtime=0;
+  time_t time2nextperiodstart=0;
   
   xSemaphoreTake(MAIN_TASK_mutex, portMAX_DELAY);
 
@@ -2388,8 +2389,11 @@ void mainTask(void *pvParameters){
 	int hour=(int)now/3600;
 	if(prevhour!=hour)
 	{
-     if ((now_life_sent-now_life_received)>1200) reboot_WIFI_STICK();
-
+     if ((now_life_sent-now_life_received)>1200) 
+	 {
+		reboot_WIFI_STICK();
+	    if (time2nextperiodstart>600) esp_restart();
+	 }
 	
 	 MQTT_BLE_answer[0]=0;	
 	 for(i=0;i<CHANNEL_NUM;i++) append_ontimes2string(i);
@@ -2482,7 +2486,7 @@ void mainTask(void *pvParameters){
 	 else if ( Channel_pump_ON[0] &&  Channel_pump_ON[1] &&  Channel_pump_ON[2]) {daily_volume[0]+=delta_volume_cnt*ratio0;daily_volume[1]+=delta_volume_cnt*ratio1;daily_volume[1]+=delta_volume_cnt*(1.0-ratio0-ratio1);
 	*/}
 	
-	
+	time2nextperiodstart=86400;
 	
 	for(ch=0;ch<CHANNEL_NUM;ch++)
 	{
@@ -2492,10 +2496,12 @@ void mainTask(void *pvParameters){
 	   if(channels[ch].Chedule_array[i].on_time<channels[ch].Chedule_array[i].off_time)
 	   {	
 			//ESP_LOGI(TAG,"ch=%d,period=%d,day=%d,time:%d,start%d,stop%d,day:%c",ch,i,dayofweek,(int) now,(int)channels[ch].Chedule_array[i].on_time,(int)channels[ch].Chedule_array[i].off_time,channels[ch].Chedule_array[i].weekdays[dayofweek]);
-		if((channels[ch].Chedule_array[i].on_time<now) && (channels[ch].Chedule_array[i].off_time>now) && ((channels[ch].Chedule_array[i].weekdays[dayofweek-1]=='+') || (channels[ch].Chedule_array[i].weekdays[dayofweek-1]=='x') || (channels[ch].Chedule_array[i].weekdays[dayofweek-1]=='X')|| (channels[ch].Chedule_array[i].weekdays[dayofweek-1]=='1')))
+		if ((channels[ch].Chedule_array[i].weekdays[dayofweek-1]=='+') || (channels[ch].Chedule_array[i].weekdays[dayofweek-1]=='x') || (channels[ch].Chedule_array[i].weekdays[dayofweek-1]=='X')|| (channels[ch].Chedule_array[i].weekdays[dayofweek-1]=='1')) //valid for day
+		{   int timediff;
+			if((channels[ch].Chedule_array[i].on_time<now) && (channels[ch].Chedule_array[i].off_time>now) )
 		{
 			ESP_LOGI(TAG,"times:%d<%d<%d",(int)channels[ch].Chedule_array[i].on_time,(int)now,(int)channels[ch].Chedule_array[i].off_time);
-			
+		    time2nextperiodstart=0;	
 			
 			if(now-channels[ch].Chedule_array[i].on_time<30) 
 			{ 
@@ -2512,10 +2518,18 @@ void mainTask(void *pvParameters){
 				 switch_channel(ch,FINISHED);		 
 			}	
 		}	
+		    else if ((timediff=channels[ch].Chedule_array[i].on_time-now)>0)
+			{ // scheduled later
+			 if (timediff < time2nextperiodstart)	time2nextperiodstart=timediff;
+			}
+	    }
 	   }		
 	 }// for periods
 	}//for channel
-	}
+	
+
+
+    }
 	else Write_Msg_toDisplay(1,"wait for SNTP sync.");
     
 	switch (check_pump_protection(now))
