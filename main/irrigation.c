@@ -159,8 +159,8 @@ char new_Firmware_version[16];
 typedef enum {STARTED,RESUMED,INIT,ENABLED,DISABLED,SUSPENDED,DELAY,FINISHED,END,IDLE,REBOOTED,NOREQUEST} T_states;
 char* str_states[NOREQUEST-STARTED+1]={"STARTED","RESUMED","INIT","ENABLED","DISABLED","SUSPENDED","DELAY","FINISHED","END","IDLE","REBOOTED","NOREQUEST"};
 char* str_short_states[NOREQUEST-STARTED+1]={"START","RES","INIT","ENAB","DIS","SUSP","DELAY","FIN","END","IDLE","REBO","NO_REQ"};
-typedef enum {OFF,LEVEL,POWER,CT,STACK,LOG,VOLUME} T_measure_mode;
-typedef enum {USE_BLE,USE_WIFI,USE_ACS71020,MAIN_TASK,TEMPSENSOR,CURRENTSENSOR,MEASURE_LEVEL,MEASURE_POWER,POWERMETER_TASK} T_run_mode_bits;
+typedef enum {OFF,LEVEL,POWER,CT,STACK,LOG,VOLUME,DEBUG} T_measure_mode;
+typedef enum {USE_BLE,USE_WIFI,USE_ACS71020,MAIN_TASK,TEMPSENSOR,CURRENTSENSOR,MEASURE_LEVEL,MEASURE_POWER,POWERMETER_TASK,USE_LORA} T_run_mode_bits;
 int run_mode=(1<<USE_BLE) | (1<<USE_WIFI);
 bool USE_MCP=false;
 
@@ -331,7 +331,7 @@ typedef struct{
 } T_chedule_data;
 
 
-
+uint8_t lora_receive_buf[32];
 
 #define CHANNEL_NUM 3
 #define PERIODS 10
@@ -751,13 +751,15 @@ void append_ontimes2string(int ch)
     sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period sink volume: %1.1fl\n",channels[ch].Name,channels[ch].last_sink_volume);
     sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:suspend count: %d\n",channels[ch].Name,channels[ch].suspend_cnt);
 
-
-	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"status:%s\n",str_states[channels[ch].channel_state]);
-	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"is_channel_active:%d\n",(int)is_channel_active(ch));
-	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"last_switch_on_time:%lld\n",channels[ch].last_switch_on_time);
-	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"period_ontime:%d\n",channels[ch].period_ontime);
-	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"prev_daily_period_ontimes:%d\n",channels[ch].prev_daily_period_ontimes);
-	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"sec_in_day:%lld\n",sec_in_day());
+    if (measure_mode==DEBUG)
+	{
+		sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"status:%s\n",str_states[channels[ch].channel_state]);
+		sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"is_channel_active:%d\n",(int)is_channel_active(ch));
+		sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"last_switch_on_time:%lld\n",channels[ch].last_switch_on_time);
+		sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"period_ontime:%d\n",channels[ch].period_ontime);
+		sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"prev_daily_period_ontimes:%d\n",channels[ch].prev_daily_period_ontimes);
+		sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"sec_in_day:%lld\n",sec_in_day());
+	}
 }
 
 
@@ -1390,7 +1392,7 @@ bool run_mode_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32
 				int intval;
 				 if(sscanf(ldata,"%d",&intval)==1) 
 				 {
-					 if ((intval>=0) && (intval<=65535)) 
+					 if ((intval>=0) && (intval<(1<<(USE_LORA+1)))) 
 					 {
 						char msg[16];
 						 run_mode=intval;
@@ -1469,6 +1471,11 @@ bool LIST_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 	{
 	 Publish_file(IRR_FILE);
 	 MQTT_BLE_answer[0]=0;
+	}
+	else if (strcmp(ldata,"LORA")==0)
+	{
+		MQTT_BLE_answer[0]=0;
+		sprintf(MQTT_BLE_answer,"%s\n",lora_receive_buf);
 	}
 
 	return true;
@@ -2976,19 +2983,19 @@ void Load_data_from_NVS()
      uint8_t uint8val;
 	 uint16_t uint16val;
      sprintf(keyName,"P%1.1d_DIS",ch);
-	 if (nvs_get_u8(nvs_handle, keyName, &uint8val)==ESP_OK) enable_pump(ch, intval?false:true);
+	 if (nvs_get_u8(nvs_handle, keyName, &uint8val)==ESP_OK) enable_pump(ch, uint8val?false:true);
 	 
 	 sprintf(keyName,"P%1.1d_DELAY",ch);
-	 if (nvs_get_u8(nvs_handle, keyName,&uint8val)==ESP_OK) set_restart_delay(ch,intval);
+	 if (nvs_get_u8(nvs_handle, keyName,&uint8val)==ESP_OK) set_restart_delay(ch,uint8val);
 
      sprintf(keyName,"P%1.1d_PRIO",ch);
-     if (nvs_get_u8(nvs_handle, keyName, &uint8val)==ESP_OK) setPUMP_prio(ch,intval==1);
+     if (nvs_get_u8(nvs_handle, keyName, &uint8val)==ESP_OK) setPUMP_prio(ch,uint8val==1);
 
 	 sprintf(keyName,"P%1.1d_SWBCK",ch);
-	 if (nvs_get_u8(nvs_handle, keyName, &uint8val)==ESP_OK)  setPUMP_switchbackifavailable(ch,intval==1);   
+	 if (nvs_get_u8(nvs_handle, keyName, &uint8val)==ESP_OK)  setPUMP_switchbackifavailable(ch,uint8val==1);   
 
 	 sprintf(keyName,"P%1.1d_IMAXmA",ch);
-	 if (nvs_get_u16(nvs_handle, keyName, &uint16val)==ESP_OK)  set_max_current(ch,intval/1000);   
+	 if (nvs_get_u16(nvs_handle, keyName, &uint16val)==ESP_OK)  set_max_current(ch,uint16val/1000);   
 
    }
 
@@ -3110,19 +3117,16 @@ void delete_all_chedules()
  Save_data_to_NVS();
 }
 
-
-uint8_t buf[32];
-
 void task_rx(void *p)
 {
    int x;
    for(;;) {
       lora_receive();    // put into receive mode
       while(lora_received()) {
-         x = lora_receive_packet(buf, sizeof(buf));
-         buf[x] = 0;
-         printf("Received: %s\n", buf);
-		 ESP_LOGI(TAG, "Received: %s\n", buf);
+         x = lora_receive_packet(lora_receive_buf, sizeof(lora_receive_buf));
+         lora_receive_buf[x] = 0;
+         printf("Received: %s\n", lora_receive_buf);
+		 ESP_LOGI(TAG, "Received: %s\n", lora_receive_buf);
          lora_receive();
       }
       vTaskDelay(1);
@@ -3716,7 +3720,7 @@ void app_main()
 
 
    
-	if (true)
+	if (false)
 	{
 		char buf[1000];
 		FILE *ptr_file=fopen(IRR_FILE,"r");
@@ -3735,14 +3739,15 @@ void app_main()
 //	readEeprom(ACS71020_address_default);
 //    readShadow(ACS71020_address_default);
 	
- /*  lora_init();
-   ESP_LOGI(TAG, "Done");
-    ESP_LOGI(TAG, "lora_set_frequency");
-   lora_set_frequency(433e6);
-    ESP_LOGI(TAG, "Done");
-   lora_enable_crc();
-   xTaskCreate(&task_rx, "task_rx", 2048, NULL, 5, NULL);*/
-	ESP_LOGI("TEST_DI","ISOLATED_INPUT_PUMP_1=%d",readDI(ISOLATED_INPUT_PUMP_1));
+    if (run_mode & (1<<USE_LORA))
+	{
+		lora_init();
+		lora_set_frequency(433e6);
+		lora_enable_crc();
+		xTaskCreate(&task_rx, "task_rx", 2048, NULL, 5, NULL);
+	}
+
+	//ESP_LOGI("TEST_DI","ISOLATED_INPUT_PUMP_1=%d",readDI(ISOLATED_INPUT_PUMP_1));
 	Write_Msg_toDisplay(3,"Done!");
 	
 	
