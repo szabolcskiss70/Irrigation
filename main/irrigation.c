@@ -154,25 +154,13 @@ char *maintopic="IRRIGATION";
 const esp_app_desc_t *app_desc;
 char new_Firmware_version[16];
 
-//extern int read_ACS71020(int chip_addr, int data_addr, int *X0, int *X1,int *X2,int *X3);
-extern double MeasuredValue(int ACS71020_address, int reg_address, long mask, int shiftleft,int shiftright,int fractional, float fullscale );
-//extern void readEeprom(int ACS71020_address_default);
-//extern void readShadow(int ACS71020_address_default);
-extern int init_ACS71020(i2c_master_bus_handle_t in_tool_bus_handle,int chip_addr);
-extern int write_ACS71020(int chip_addr, int data_addr, int regValue);
-extern long read_ACS71020_register(int ACS71020_address, int reg_address, long mask, int shiftleft,int shiftright);
-void read_ACS71020_register2(int reg_addr,long value);
 
-
-#define ACS71020_address_default 0x66
-#define Rs 1000.0
-#define R1_4 2000000.0
 
 typedef enum {STARTED,RESUMED,INIT,ENABLED,DISABLED,SUSPENDED,DELAY,FINISHED,END,IDLE,REBOOTED,NOREQUEST} T_states;
 char* str_states[NOREQUEST-STARTED+1]={"STARTED","RESUMED","INIT","ENABLED","DISABLED","SUSPENDED","DELAY","FINISHED","END","IDLE","REBOOTED","NOREQUEST"};
 char* str_short_states[NOREQUEST-STARTED+1]={"START","RES","INIT","ENAB","DIS","SUSP","DELAY","FIN","END","IDLE","REBO","NO_REQ"};
 typedef enum {OFF,LEVEL,POWER,CT,STACK,LOG,VOLUME} T_measure_mode;
-typedef enum {USE_BLE,USE_WIFI,MAIN_TASK,POWERMETER_TASK,TEMPSENSOR,CURRENTSENSOR,MEASURE_LEVEL,MEASURE_POWER} T_run_mode_bits;
+typedef enum {USE_BLE,USE_WIFI,USE_ACS71020,MAIN_TASK,TEMPSENSOR,CURRENTSENSOR,MEASURE_LEVEL,MEASURE_POWER,POWERMETER_TASK} T_run_mode_bits;
 int run_mode=(1<<USE_BLE) | (1<<USE_WIFI);
 bool USE_MCP=false;
 
@@ -500,9 +488,13 @@ void to_lower(const char *str, char *out_str)
 		FILE *ptr_file=fopen(filename,"r");
 		if (ptr_file!=NULL)
 		{
-			while (fgets(buf_2read,sizeof(buf_2read)-1, ptr_file)!=NULL) 	
+			while (fgets(buf_2read,sizeof(buf_2read), ptr_file)!=NULL) 	
 			{
 					int msg_id;
+
+					msg_id =my_esp_mqtt_client_publish(mqtt_client, "FILE", buf_2read, 0, 0, 0);   //Qos=1; retain=0
+					vTaskDelay(1000 / portTICK_PERIOD_MS);
+					/*  
 					if (strlen(buf_2send)+strlen(buf_2read)+1>sizeof(buf_2send))
 					{
 						msg_id = my_esp_mqtt_client_publish(mqtt_client, "FILE", buf_2send, 0, 0, 0);   //Qos=1; retain=0
@@ -511,9 +503,9 @@ void to_lower(const char *str, char *out_str)
 					else 
 					{
 					 strcat(buf_2send,buf_2read);
-					}
+					}*/
 			}
-			if (strlen(buf_2send)) my_esp_mqtt_client_publish(mqtt_client, "FILE", buf_2send, 0, 0, 0);   //Qos=1; retain=0
+			//if (strlen(buf_2send)) my_esp_mqtt_client_publish(mqtt_client, "FILE", buf_2send, 0, 0, 0);   //Qos=1; retain=0
 			
 			fclose(ptr_file);
 	    }
@@ -744,10 +736,18 @@ time_t sec_in_day()
 
 void append_ontimes2string(int ch) 
 {
-	time_t timeofactivechannel=0;
-	if (is_channel_active(ch)==true) timeofactivechannel=sec_in_day()-channels[ch].last_switch_on_time;
-	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s: Daily ontime: %llds  %1.0fl\n",channels[ch].Name,channels[ch].prev_daily_period_ontimes+timeofactivechannel,1.0*channels[ch].daily_volume/YF_DN32_PULSE_PER_LITER);
-	sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period ontime: %llds  %1.0fl\n",channels[ch].Name,channels[ch].period_ontime+timeofactivechannel,1.0*channels[ch].period_volume/YF_DN32_PULSE_PER_LITER);
+	if (is_channel_active(ch)==true) 
+	{
+		time_t timeofactivechannel=sec_in_day()-channels[ch].last_switch_on_time;
+		sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:Daily ontime: %llds  %1.0fl\n",channels[ch].Name,channels[ch].prev_daily_period_ontimes+channels[ch].period_ontime+timeofactivechannel,1.0*channels[ch].daily_volume/YF_DN32_PULSE_PER_LITER);
+	    sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period ontime: %llds  %1.0fl\n",channels[ch].Name,channels[ch].period_ontime+timeofactivechannel,1.0*channels[ch].period_volume/YF_DN32_PULSE_PER_LITER);
+	}
+	else
+	{
+				sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:Daily ontime: %ds  %1.0fl\n",channels[ch].Name,channels[ch].prev_daily_period_ontimes,1.0*channels[ch].daily_volume/YF_DN32_PULSE_PER_LITER);
+				sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period ontime: %ds  %1.0fl\n",channels[ch].Name,channels[ch].period_ontime,1.0*channels[ch].period_volume/YF_DN32_PULSE_PER_LITER);
+
+	}
     sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period sink time: %ds\n",channels[ch].Name,channels[ch].last_sink_time);
     sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period sink volume: %1.1fl\n",channels[ch].Name,channels[ch].last_sink_volume);
     sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:suspend count: %d\n",channels[ch].Name,channels[ch].suspend_cnt);
@@ -1054,6 +1054,7 @@ bool TIME___CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 }
 bool PUMP___CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 {
+ MQTT_BLE_answer[0]=0;	
  for(int i=0;i<pump_num;i++)	
  {
   GetPumpStatusString(i,MQTT_BLE_answer+strlen(MQTT_BLE_answer),sizeof(MQTT_BLE_answer)-strlen(MQTT_BLE_answer)-1);
@@ -1450,7 +1451,7 @@ bool LIST_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 	 MQTT_BLE_answer[0]=0;
 	 for(int ch=0;ch<CHANNEL_NUM;ch++)
 	 {
-	  sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"CH%d %8s:%16s\n",ch+1,channels[ch].Name,str_states[channels[ch].channel_state]);	
+	  sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"CH%d %8s:%16s (Pump:%d)\n",ch+1,channels[ch].Name,str_states[channels[ch].channel_state],channels[ch].assigned_pump);	
       append_ontimes2string(ch);		
 	 }
     } 
@@ -1540,7 +1541,7 @@ IRRIGATION/LIST {CHANNELS|LOG|IRR}";
 SSID {new SSID} - store new SSID \n\
 PWD  {new PASSWORD} -sore new PAssword\n\
 SAVE_NVS {} - save permanent data to NVS\n\
-RUN_MODE {} -new runmode:{USE_BLE,USE_WIFI,MAIN_TASK,POWERMETER_TASK,TEMPSENSOR,CURRENTSENSOR,MEASURE_LEVEL,MEASURE_POWER} \n\
+RUN_MODE {} -new runmode:{USE_BLE,USE_WIFI,USE_ACS71020,MAIN_TASK,TEMPSENSOR,CURRENTSENSOR,MEASURE_LEVEL,MEASURE_POWER,POWERMETER_TASK} \n\
 FIRMWARE/URL {URL} -set new URL for OTA\n\
 FIRMWARE/SELECT_URL {?:G:S:N} - ?: query, S:szabolcskiss; G:github; N:new given by FIRMWARE/URL \n\
 FIRMWARE/VERSION  {version:?} -set new version for OTA:query\n\
@@ -2264,13 +2265,17 @@ void read_ACS71020_register2(int reg_addr,long value)
 void testValveSwitching()
 {
  char message[128]="";	
- double p_standby=    MeasuredValue(ACS71020_address_default, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs);
+ xSemaphoreTake(I2C_mutex, portMAX_DELAY);
+  double p_standby=    MeasuredValue(ACS71020_address_default, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs);
+ xSemaphoreGive(I2C_mutex); 
  double p_valve;
  for(int ch=0;ch<CHANNEL_NUM;ch++)
  {
    writeDO(channels[ch].Valve_GPIO_OUTPUT, true);
    vTaskDelay(3*1000 / portTICK_PERIOD_MS);
-   p_valve=MeasuredValue(ACS71020_address_default, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs)-p_standby; 
+   xSemaphoreTake(I2C_mutex, portMAX_DELAY);
+    p_valve=MeasuredValue(ACS71020_address_default, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs)-p_standby; 
+   xSemaphoreGive(I2C_mutex); 
    writeDO(channels[ch].Valve_GPIO_OUTPUT, false);
    sprintf(message+strlen(message),"Ch:%d, Valve power:%0.1lfW\n",ch,p_valve);
  }
@@ -3643,7 +3648,7 @@ void app_main()
 	if (USE_MCP) Init_DIO(Display._i2c_bus_handle);
     if(readDI(PRG_BUTTON)==0) {run_mode=(1<<USE_BLE);Save_data_to_NVS();esp_restart();}
 
-	if (run_mode & (1<<MEASURE_POWER))  init_ACS71020(Display._i2c_bus_handle,ACS71020_address_default);
+	if (run_mode & (1<<USE_ACS71020))  init_ACS71020(Display._i2c_bus_handle,ACS71020_address_default);
 
 
 	   //Check if Two Point or Vref are burned into eFuse

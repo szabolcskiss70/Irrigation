@@ -277,7 +277,7 @@ void GetPumpStatusString(int id, char* message, int buf_size)
 {
  pcnt_unit_get_count(pump[id].pcnt_unit, &pump[id].daily_pump_flowmeter_counts);
  char *MsgFormat= "P%d: Status:%s, Daily Volume:%1.1f";
- if (buf_size>strlen(MsgFormat)+8) sprintf(message,"P%d: Status:%s, Daily Volume:%f",id+1,PUMP_status_str[pump[id].status],convertCNT2Liter(pump[id].daily_pump_flowmeter_counts));
+ if (buf_size>strlen(MsgFormat)+8) sprintf(message,"P%d: Status:%s, Daily Volume:%1.1fl",id+1,PUMP_status_str[pump[id].status],convertCNT2Liter(pump[id].daily_pump_flowmeter_counts));
 }
 
 void getpumptimechanges(int id, char* message, int buf_size)

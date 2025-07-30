@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include "esp_log.h"
 #include "driver/i2c_master.h"
+#include "ACS71020.h"
 
 
 /*
@@ -72,7 +73,8 @@ i2c_master_dev_handle_t dev_handle;
 
 int init_ACS71020(i2c_master_bus_handle_t in_tool_bus_handle,int chip_addr)
 {
-	
+    static bool ACS71020_inicialized=false;
+	if(ACS71020_inicialized) return true;
 	if (in_tool_bus_handle==NULL)
 	{	
 	 i2c_master_bus_config_t i2c_bus_config = {
@@ -97,7 +99,7 @@ int init_ACS71020(i2c_master_bus_handle_t in_tool_bus_handle,int chip_addr)
     };
   
     if (i2c_master_bus_add_device(tool_bus_handle, &i2c_dev_conf, &dev_handle) != ESP_OK) return 0;
- 
+   ACS71020_inicialized=true;
    return 1;
 }
 
