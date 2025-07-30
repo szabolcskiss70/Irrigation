@@ -1111,20 +1111,18 @@ bool PUMP_PARAM_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][
 					 if ((intval>=0) && (intval<=60)) 
 					 {
 						 set_restart_delay(ch,intval);
-						 Save_data_to_NVS();
 						 sprintf(MQTT_BLE_answer,"pump_restart_delay pump%d: %dmin",ch,intval); 
 					 }
 					 else sprintf(MQTT_BLE_answer,"%s %s", "pump_restart_delay","Out of range"); 
 				 }
 				 else sprintf(MQTT_BLE_answer,"%s %s", "pump_restart_delay","invalid format!"); 
 		}
-		
-		
-		
-		
-		
-		
-		
+		else 
+		{
+			sprintf(MQTT_BLE_answer,"%s %s", "Invalid parameter",wilcarded_topic[0]);
+			return false;
+		}
+		Save_data_to_NVS();
 		
 		GetPumpStatusString(ch,MQTT_BLE_answer+strlen(MQTT_BLE_answer),sizeof(MQTT_BLE_answer)-strlen(MQTT_BLE_answer)-1);
 
