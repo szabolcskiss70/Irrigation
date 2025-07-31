@@ -502,7 +502,6 @@ void to_lower(const char *str, char *out_str)
 			    buf_2send[0]=0;
 			 }
 			 strcat(buf_2send,buf_2read);
-			 strcat(buf_2send,"\n");
 			}
 			if (strlen(buf_2send)) my_esp_mqtt_client_publish(mqtt_client, "FILE", buf_2send, 0, 0, 0);   //Qos=1; retain=0
 			
@@ -723,6 +722,19 @@ bool is_channel_active(int ch)
 	}
 }
 
+bool is_channel_period_active(int ch)
+{
+	switch (channels[ch].channel_state)
+	{
+	 case STARTED:
+	 case DELAY:
+	 case SUSPENDED:
+	 case RESUMED: return true;
+     default: return false;	 
+	}
+}
+
+
 
 time_t sec_in_day()
 {
@@ -741,10 +753,15 @@ void append_ontimes2string(int ch)
 		sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:Daily ontime: %llds  %1.0fl\n",channels[ch].Name,channels[ch].prev_daily_period_ontimes+channels[ch].period_ontime+timeofactivechannel,1.0*channels[ch].daily_volume/YF_DN32_PULSE_PER_LITER);
 	    sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period ontime: %llds  %1.0fl\n",channels[ch].Name,channels[ch].period_ontime+timeofactivechannel,1.0*channels[ch].period_volume/YF_DN32_PULSE_PER_LITER);
 	}
+	else if (is_channel_period_active(ch)==true)
+	{
+		sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:Daily ontime: %ds  %1.0fl\n",channels[ch].Name,channels[ch].prev_daily_period_ontimes+channels[ch].period_ontime,1.0*channels[ch].daily_volume/YF_DN32_PULSE_PER_LITER);
+		sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period ontime: %ds  %1.0fl\n",channels[ch].Name,channels[ch].period_ontime,1.0*channels[ch].period_volume/YF_DN32_PULSE_PER_LITER);
+	}
 	else
 	{
-				sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:Daily ontime: %ds  %1.0fl\n",channels[ch].Name,channels[ch].prev_daily_period_ontimes,1.0*channels[ch].daily_volume/YF_DN32_PULSE_PER_LITER);
-				sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period ontime: %ds  %1.0fl\n",channels[ch].Name,channels[ch].period_ontime,1.0*channels[ch].period_volume/YF_DN32_PULSE_PER_LITER);
+		sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:Daily ontime: %ds  %1.0fl\n",channels[ch].Name,channels[ch].prev_daily_period_ontimes,1.0*channels[ch].daily_volume/YF_DN32_PULSE_PER_LITER);
+		sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period ontime: %ds  %1.0fl\n",channels[ch].Name,channels[ch].period_ontime,1.0*channels[ch].period_volume/YF_DN32_PULSE_PER_LITER);
 
 	}
     sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period sink time: %ds\n",channels[ch].Name,channels[ch].last_sink_time);
@@ -948,7 +965,7 @@ bool DEBUG_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 	 if (_log_remote_fp!=NULL)  fclose(_log_remote_fp);
 	 strcpy(MQTT_BLE_answer,"Redirecting OFF, loglevel=1");
 	}
-	else if (strcmp(ldata,"ERASE_LOG")==0)
+	else if (strcmp(ldata,"ERASE LOG")==0)
 	{
 	 remove(LOG_FILE);
 	 append_log(LOG_FILE,"New log%d",1);
@@ -1400,10 +1417,10 @@ bool run_mode_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32
 				         sprintf(msg,"%d",run_mode);
 			             sprintf(MQTT_BLE_answer,"%s {%d}", "run_mode_value",run_mode); 
 
-						 if (run_mode & (1<<MAIN_TASK)) 
+						 /*if (run_mode & (1<<MAIN_TASK)) 
 						 {
 						  if (xSemaphoreTake(MAIN_TASK_mutex, 0)==pdFALSE)  xTaskCreatePinnedToCore(&mainTask, "mainTask", 4096, NULL, 5, NULL, 0);
-						 }
+						 }*/
 					 }
 				 }
 			return true;
@@ -1516,24 +1533,27 @@ bool CHANNEL_PARAM_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[
 
 bool help_CB(char* ltopic, char* ldata, bool MQTT,char *wilcarded_topic)
 {
-				char *message="IRRIGATION/HELP show the available commands -Topic {Message}\n\
+ char *message="IRRIGATION/HELP show the available commands -Topic {Message}\n\
 IRRIGATION/FIRMWARE/URL {URL} -set new URL for OTA\n\
 IRRIGATION/FIRMWARE/SELECT_URL {?:G:S:N} - ?: query, S:szabolcskiss; G:github; N:new given by FIRMWARE/URL \n\
 IRRIGATION/FIRMWARE/VERSION  {version:?} -set new version for OTA:query\n\
 IRRIGATION/FIRMWARE/ROLLBACK {ROLLBACK:CANCEL_ROLLBACK} -keep or rollback OTA update\n\
-IRRIGATION/CHANNEL/x/REQUEST {STARTED,RESUMED,INIT,ENABLED,DISABLED,SUSPENDED,DELAY,FINISHED,END,IDLE,REBOOTED,NOREQUEST} -set new state\n\
-IRRIGATION/CHANNEL/x/SCHEDULE/PERIODx {10:00-12:00 [+++++++] 30 2000} -add new schedule period 30min 2000l\n\
+IRRIGATION/DEBUG {REDIRECT ON|REDIRECT OFF|LEVEL x|ERASE LOG|GET NEXT|VALVE CHECK) - debug features";		
+my_esp_mqtt_client_publish(mqtt_client, "MEASURE/commands1", message, 0, 0, 0);   //Qos=0; retain=0				 
+vTaskDelay(1*1000 / portTICK_PERIOD_MS);		  
+
+message="IRRIGATION/CHANNEL/x/REQUEST {STARTED,RESUMED,INIT,ENABLED,DISABLED,SUSPENDED,DELAY,FINISHED,END,IDLE,REBOOTED,NOREQUEST} -set new state\n\
+IRRIGATION/CHANNEL/x/SCHEDULE/PERIODx {10:00-12:00 [+++++++] 30 1000} -add new schedule period 30min 1000l\n\
 IRRIGATION/CHANNEL/x/SCHEDULE/? {}   -list all programmed periods\n\
 IRRIGATION/CHANNEL/x/STATISTIC {} -get statistic\n\
 IRRIGATION/CHANNEL/x/PARAM/NAME {new name} -set channel name\n\
 IRRIGATION/CHANNEL/x/PARAM/PUMP {0|1|2} -set assigned pump 2:BOTH\n\
 IRRIGATION/PUMP/+/REQUEST +:PRIO|1|2 {ON|OFF|DISABLE|ENABLE|SET_PRIO|SET_SWITCHBACK|DEL_SWITCHBACK} -switch PUMP ON|OFF\n\
-IRRIGATION/PUMP/? {} -query pump status\n\
-";		
-		      	
-				  my_esp_mqtt_client_publish(mqtt_client, "MEASURE/commands", message, 0, 0, 0);   //Qos=0; retain=0	
-				 
-				 vTaskDelay(3*1000 / portTICK_PERIOD_MS);	
+IRRIGATION/PUMP/? {} -query pump status";
+
+
+my_esp_mqtt_client_publish(mqtt_client, "MEASURE/commands2", message, 0, 0, 0);   //Qos=0; retain=0				 
+vTaskDelay(1*1000 / portTICK_PERIOD_MS);	
 message="IRRIGATION/PUMP/x/PARAM/RESTART_DELAY {10min} -set pump restart delay\n\
 IRRIGATION/LEVEL/? {} -query water level\n\
 IRRIGATION/TIME/? {} -query TIME\n\
@@ -1542,9 +1562,9 @@ IRRIGATION/MEASURE_MODE {POWER:LEVEL:STACK:CT:LOG:VOLUME:OFF}\n\
 IRRIGATION/RESTART {ESP:WIFI} -force restart of ESP32 or WIFI dongle\n\
 IRRIGATION/ACS71020/READ {0xhex_address}\n\
 IRRIGATION/ACS71020/WRITE {0xhex_address=0xhex_value}\n\	
-IRRIGATION/LIST {CHANNELS|LOG|IRR}";	
+IRRIGATION/LIST {CHANNELS|LOG|IRR|LORA}";	
 			
-				  my_esp_mqtt_client_publish(mqtt_client, "MEASURE/commands", message, 0, 0, 0);   //Qos=0; retain=0	
+my_esp_mqtt_client_publish(mqtt_client, "MEASURE/commands3", message, 0, 0, 0);   //Qos=0; retain=0	
 					
 				 if(!MQTT) 
 				 {
@@ -1910,7 +1930,8 @@ static void event_handler(void* arg, esp_event_base_t event_base,
 			//SmartConfigIflongpresssed();
 			if(wifi_retry_count==100)
 			{
-			 wifi_retry_count=0;
+			 //wifi_retry_count=0;
+			 ESP_LOGI(TAG, "reboot_WIFI_STICK_wifi_retry_count:%d",wifi_retry_count);
 			 reboot_WIFI_STICK();
 			 vTaskDelay(10*1000 / portTICK_PERIOD_MS);	
 			}				
@@ -2977,7 +2998,7 @@ void Load_data_from_NVS()
 	if(nvs_get_i32(nvs_handle, "run_mode",&intval)==ESP_OK) run_mode=(int)intval | (1<<USE_BLE) | (1<<USE_WIFI);;
 	ESP_LOGI(TAG, "run_mode:%d",run_mode);
 
-    for (ch=0;ch<pump_num;ch++)
+    for (ch=0;ch<2;ch++)
    {
      char keyName[32];
      uint8_t uint8val;
@@ -3055,7 +3076,7 @@ void Save_data_to_NVS()
    
 	nvs_set_i32(nvs_handle, "run_mode",run_mode);
   
-   for (ch=0;ch<pump_num;ch++)
+   for (ch=0;ch<2;ch++)
    {
      char keyName[32];
 
