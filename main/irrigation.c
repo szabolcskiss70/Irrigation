@@ -1144,7 +1144,10 @@ bool PUMP_PARAM_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][
 		Save_data_to_NVS();
 		
 		GetPumpStatusString(ch,MQTT_BLE_answer+strlen(MQTT_BLE_answer),sizeof(MQTT_BLE_answer)-strlen(MQTT_BLE_answer)-1);
-
+		if (strcmp(wilcarded_topic[0],"PRIO?")==0) sprintf(MQTT_BLE_answer,"prio pump%d: %d",ch,(int) getPUMP_prio(ch));
+		else if (strcmp(wilcarded_topic[0],"SWITCHBACK?")==0)sprintf(MQTT_BLE_answer,"prio pump%d: %d",ch,(int) getPUMP_switchbackifavailable(ch));
+		else if (strcmp(wilcarded_topic[0],"RESTART_DELAY?")==0) sprintf(MQTT_BLE_answer,"pump_restart_delay pump%d: %dmin",ch,get_restart_delay(ch)); 
+	
 	}
 	return true;
 }
