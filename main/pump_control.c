@@ -110,7 +110,7 @@ void init_pump(int id, int GPIO_PUMP, int GPIO_PROT,int GPIO_CNT,bool prio, bool
 	pump[id].GPIO_PUMP=GPIO_PUMP;
 	pump[id].GPIO_PROT=GPIO_PROT;
 	pump[id].GPIO_CNT=GPIO_CNT;
- 
+  pump[id].max_current=5.0; 
     pump[id].sink_time=0;
     pump[id].fill_time=0;	
 	pump[id].last_pump_on_time=0;
@@ -147,19 +147,25 @@ void enable_pump(int ch,bool enable)
  *
  * @return  void
  */
-void switch_pump(bool on_state)
+void switch_pump(bool on_state, T_pump_list assigned_pump)
 {
- int pump2switch;
- if (running_pump_ID>-1) pump2switch=running_pump_ID;	 
- else
- {
-  int higher_prio_pump=0;
-  if ((pump_num==2) && (pump[1].prio)) higher_prio_pump=1;
-  pump2switch=higher_prio_pump;
-  if ((pump[higher_prio_pump].status==P_DISABLED) || (pump[higher_prio_pump].status==P_SUSPENDED))
-  pump2switch=(higher_prio_pump==1)?0:1;
+ int pump2switch; 
+ switch (assigned_pump)
+ {            
+   case BOTH:
+                if (running_pump_ID>-1) pump2switch=running_pump_ID;	 
+                else
+                {
+                  int higher_prio_pump=0;
+                  if ((pump_num==2) && (pump[1].prio)) higher_prio_pump=1;
+                  pump2switch=higher_prio_pump;
+                  if ((pump[higher_prio_pump].status==P_DISABLED) || (pump[higher_prio_pump].status==P_SUSPENDED))
+                  pump2switch=(higher_prio_pump==1)?0:1;
+                 }
+                 break;
+   default:     pump2switch=assigned_pump;
+                break;              
  }
-
 
  switch_pump_id_to_state(pump2switch,on_state?P_ON:P_OFF);
 }
@@ -271,7 +277,7 @@ void GetPumpStatusString(int id, char* message, int buf_size)
 {
  pcnt_unit_get_count(pump[id].pcnt_unit, &pump[id].daily_pump_flowmeter_counts);
  char *MsgFormat= "P%d: Status:%s, Daily Volume:%1.1f";
- if (buf_size>strlen(MsgFormat)+8) sprintf(message,"P%d: Status:%s, Daily Volume:%f",id+1,PUMP_status_str[pump[id].status],convertCNT2Liter(pump[id].daily_pump_flowmeter_counts));
+ if (buf_size>strlen(MsgFormat)+8) sprintf(message,"P%d: Status:%s, Daily Volume:%1.1fl",id+1,PUMP_status_str[pump[id].status],convertCNT2Liter(pump[id].daily_pump_flowmeter_counts));
 }
 
 void getpumptimechanges(int id, char* message, int buf_size)
@@ -292,6 +298,11 @@ T_pump_states GetPumpStatus(int id)
 void set_restart_delay(int id, int restart_delay)
 {
  pump[id].pump_restart_delay=restart_delay;
+}
+
+int get_restart_delay(int id)
+{
+  return (pump[id].pump_restart_delay);
 }
   
 void get_LEVEL_string(char* result_string)
@@ -413,3 +424,5 @@ void setPUMP_switchbackifavailable(int id, bool val) {pump[id].prio=val;}
 
 float getsinkvolume(int id) {return pump[id].sink_volume;}
 
+float get_max_current(int id) {return pump[id].max_current;}
+void  set_max_current(int id, float imax) {pump[id].max_current=imax;}

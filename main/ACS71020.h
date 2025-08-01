@@ -27,10 +27,26 @@
 #include "ACS71020_eeprom.h"
 #include "ACS71020_volatile.h"
 
+
+
 /**
  * register maps and bit fields are in ACS71020_eeprom.h and ACS71020_volatile.h
  * this file will contain the functions to read and write to the registers, and
  * to perform power related operations
  */
+
+ //extern int read_ACS71020(int chip_addr, int data_addr, int *X0, int *X1,int *X2,int *X3);
+extern double MeasuredValue(int ACS71020_address, int reg_address, long mask, int shiftleft,int shiftright,int fractional, float fullscale );
+//extern void readEeprom(int ACS71020_address_default);
+//extern void readShadow(int ACS71020_address_default);
+extern int init_ACS71020(i2c_master_bus_handle_t in_tool_bus_handle,int chip_addr);
+extern int write_ACS71020(int chip_addr, int data_addr, int regValue);
+extern long read_ACS71020_register(int ACS71020_address, int reg_address, long mask, int shiftleft,int shiftright);
+void read_ACS71020_register2(int reg_addr,long value);
+
+
+#define ACS71020_address_default 0x66
+#define Rs 1000.0
+#define R1_4 2000000.0
 
 #endif // _ACS71020_H_
