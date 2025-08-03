@@ -3603,7 +3603,7 @@ void app_main()
     ESP_LOGI(TAG, "Project name:     %s", app_desc->project_name);
     ESP_LOGI(TAG, "App version:      %s", app_desc->version);
 
-    esp_log_level_set("*", ESP_LOG_ERROR);
+    esp_log_level_set("*", ESP_LOG_VERBOSE);
     /*esp_log_level_set("MQTT_CLIENT", ESP_LOG_VERBOSE);
     esp_log_level_set("TRANSPORT_TCP", ESP_LOG_VERBOSE);
     esp_log_level_set("TRANSPORT_SSL", ESP_LOG_VERBOSE);
@@ -3725,11 +3725,57 @@ void app_main()
      do_calibration1_chan0 = example_adc_calibration_init(ADC_UNIT_1, EXAMPLE_ADC1_CHAN0, EXAMPLE_ADC_ATTEN, &adc1_cali_chan0_handle);
      do_calibration1_chan1 = example_adc_calibration_init(ADC_UNIT_1, EXAMPLE_ADC1_CHAN1, EXAMPLE_ADC_ATTEN, &adc1_cali_chan1_handle);
 
-	
-	if (run_mode & (1<<USE_WIFI)) initialise_wifi();
+
+
+
+
+    if (run_mode & (1<<USE_LORA))
+	{   ESP_LOGI("LORA","Start init lora");
+		int sendcount=0;
+		int err=lora_init();
+		ESP_LOGI("LORA","Init: %d",err);
+		//lora_initialized();
+
+		lora_set_frequency(433775000);
+		lora_set_spreading_factor(12);
+		lora_set_tx_power(17);
+		lora_set_bandwidth(125000);
+		lora_set_coding_rate(8);
+		//lora_enable_crc();
+
+        //lora_dump_registers();
+		xTaskCreate(&task_rx, "task_rx", 2048, NULL, 5, NULL);
+
+/*
+        lora_dump_registers();
+
+ 		ESP_LOGI("LORA","Start sending packets");
+        for (sendcount=0;sendcount<1000;sendcount++)
+		{
+		//sprintf((char*)lora_receive_buf,"TEst%d",sendcount);
+		lora_receive_buf[0]='T';
+		lora_receive_buf[1]='E';
+		lora_receive_buf[2]='S';
+		lora_receive_buf[3]='T';
+		lora_receive_buf[4]=0;
+
+        lora_send_packet(lora_receive_buf,5);
+		ESP_LOGI("LORA","package%d sent",sendcount);
+		vTaskDelay(2*1000 / portTICK_PERIOD_MS);
+		}*/
+	}	
+
+    if (run_mode & (1<<USE_WIFI)) initialise_wifi();
 
 	if (getfilesize(LOG_FILE)>1E6) remove(LOG_FILE);
 	if (getfilesize(IRR_FILE)>0.5E6) remove(IRR_FILE);
+
+
+
+
+
+
+
 
 
     if (run_mode & (1<<MAIN_TASK))          xTaskCreatePinnedToCore(&mainTask, "mainTask", 4096, NULL, 5, NULL, 0);
@@ -3766,13 +3812,7 @@ void app_main()
 //	readEeprom(ACS71020_address_default);
 //    readShadow(ACS71020_address_default);
 	
-    if (run_mode & (1<<USE_LORA))
-	{
-		lora_init();
-		lora_set_frequency(433e6);
-		lora_enable_crc();
-		xTaskCreate(&task_rx, "task_rx", 2048, NULL, 5, NULL);
-	}
+
 
 	//ESP_LOGI("TEST_DI","ISOLATED_INPUT_PUMP_1=%d",readDI(ISOLATED_INPUT_PUMP_1));
 	Write_Msg_toDisplay(3,"Done!");
