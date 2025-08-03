@@ -1498,7 +1498,8 @@ bool LIST_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 	else if (strcmp(ldata,"LORA")==0)
 	{
 		MQTT_BLE_answer[0]=0;
-		sprintf(MQTT_BLE_answer,"%s\n",lora_receive_buf);
+		sprintf(MQTT_BLE_answer,"rssi:%d, Daa:%s\n",lora_packet_rssi(), lora_receive_buf);
+
 	}
 
 	return true;
@@ -3746,23 +3747,25 @@ void app_main()
         //lora_dump_registers();
 		xTaskCreate(&task_rx, "task_rx", 2048, NULL, 5, NULL);
 
-/*
+      if(false)
+	  {
         lora_dump_registers();
 
  		ESP_LOGI("LORA","Start sending packets");
         for (sendcount=0;sendcount<1000;sendcount++)
 		{
-		//sprintf((char*)lora_receive_buf,"TEst%d",sendcount);
-		lora_receive_buf[0]='T';
+		sprintf((char*)lora_receive_buf,"TEst%d",sendcount);
+		/*lora_receive_buf[0]='T';
 		lora_receive_buf[1]='E';
 		lora_receive_buf[2]='S';
 		lora_receive_buf[3]='T';
-		lora_receive_buf[4]=0;
+		lora_receive_buf[4]=0;*/
 
-        lora_send_packet(lora_receive_buf,5);
+        lora_send_packet(lora_receive_buf,sizeof(lora_receive_buf));
 		ESP_LOGI("LORA","package%d sent",sendcount);
 		vTaskDelay(2*1000 / portTICK_PERIOD_MS);
-		}*/
+		}
+	 }
 	}	
 
     if (run_mode & (1<<USE_WIFI)) initialise_wifi();
