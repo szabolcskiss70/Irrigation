@@ -6,12 +6,14 @@
 //#include "driver/gpio.h"
 #include "driver/pulse_cnt.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #define Volume_measure_interval_us 11E6 
 #define YF_DN32_PULSE_PER_LITER	27
 
 typedef enum {PUMP1,PUMP2,BOTH}T_pump_list;
-typedef enum {P_DISABLED, P_SUSPENDED,P_DELAY,P_OFF,P_RESUMED,P_ON} T_pump_states;
+typedef enum {P_OVER_CURRENT,P_FLOW_PROT,P_DISABLED, P_SUSPENDED,P_DELAY,P_OFF,P_RESUMED,P_ON} T_pump_states;
 
 typedef struct{
 	int ID;
@@ -35,8 +37,11 @@ typedef struct{
 	pcnt_unit_handle_t pcnt_unit; // flow meter counter handle
     int daily_pump_flowmeter_counts; // daily pump counts
     int prev_daily_pump_flowmeter_counts; //daily pump counts in previous read cycle
+	int prev_daily_pump_flowmeter_counts_flowmeter; ////daily pump counts in previous measure cycle
 	time_t status_change_time[P_ON-P_DISABLED+1]; // timestamps of state changes
 	bool pump_running; // actual pump state
+	TaskHandle_t CurrentMonitoringTaskHAndle;
+	int flow_rate_protection_limit_dl_per_min;
 } T_pump; 
 
 //extern T_pump pump[2];
@@ -68,5 +73,6 @@ int getfilltime(int id);
 float getsinkvolume(int id);
 float get_max_current(int id);
 void  set_max_current(int id, float imax);
+void  set_flow_rate_protection_limit_dl_per_min(int id, int flow_min_dlper_min);
 
 #endif

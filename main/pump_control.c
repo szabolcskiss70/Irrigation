@@ -2,16 +2,20 @@
 #include <string.h>
 #include "esp_timer.h"
 #include "DIO.h"
+#include "ACS71020.h"
+
+extern SemaphoreHandle_t I2C_mutex;
 
 extern void Write_Msg_toDisplay(int line, char *Msg);
 extern float water_level;
 
 void install_pcnt();
+void Chek_pump_current_and_flow_rate_task(void *pvParameters);
 #define EXAMPLE_PCNT_HIGH_LIMIT 32767
 #define EXAMPLE_PCNT_LOW_LIMIT -1
 
 T_pump pump[2];
-char* PUMP_status_str[]={"DISABLED","SUSPENDED","DELAY","OFF","RESUMED","ON"};
+char* PUMP_status_str[]={"OVER_CURRENT","FLOW_PROT","DISABLED","SUSPENDED","DELAY","OFF","RESUMED","ON"};
 
 static const char *TAG = "pump";
 int pump_num=0;
@@ -40,6 +44,8 @@ void clear_volumes_at_midnight()
   {
 		pump[id].daily_pump_flowmeter_counts=0;
 		pcnt_unit_clear_count(pump[id].pcnt_unit);
+    pump[id].prev_daily_pump_flowmeter_counts_flowmeter=0;
+    pump[id].prev_daily_pump_flowmeter_counts=0;
   }
  }
  prev_now=now;
@@ -76,8 +82,11 @@ void switch_pump_ch_relay(int id,bool on_state)
   }
  } 
 	running_pump_ID=(on_state==true)?id:-1;
+  if (on_state) vTaskResume(pump[id].CurrentMonitoringTaskHAndle);
+  else vTaskSuspend(pump[id].CurrentMonitoringTaskHAndle);
   writeDO(pump[id].GPIO_PUMP, (on_state==true)?1:0);	
   pump[id].pump_running=on_state;
+ 
 }
 
 
@@ -105,6 +114,7 @@ void switch_pump_id_to_state(int id, T_pump_states new_state)
 
 void init_pump(int id, int GPIO_PUMP, int GPIO_PROT,int GPIO_CNT,bool prio, bool switchbackifavailable)
 {
+  char Chek_pump_current_task_name[32];
 	pump[id].ID=id;
   pump[id].pump_running=false;
 	pump[id].GPIO_PUMP=GPIO_PUMP;
@@ -122,10 +132,15 @@ void init_pump(int id, int GPIO_PUMP, int GPIO_PROT,int GPIO_CNT,bool prio, bool
     pump[id].pcnt_unit = NULL;
     pump[id].daily_pump_flowmeter_counts=0;
     pump[id].prev_daily_pump_flowmeter_counts=0;
+    pump[id].prev_daily_pump_flowmeter_counts_flowmeter=0;
 	install_pcnt(id);
   set_DIO_direction(GPIO_PUMP,GPIO_MODE_OUTPUT);
   set_DIO_direction(GPIO_PROT,GPIO_MODE_INPUT);
-   switch_pump_id_to_state(id,P_OFF);
+  pump[id].flow_rate_protection_limit_dl_per_min=50; //50dl/min ->5l/min
+  sprintf(Chek_pump_current_task_name,"pump%d_current_task",id);
+  xTaskCreatePinnedToCore(&Chek_pump_current_and_flow_rate_task, Chek_pump_current_task_name, 4096, &pump[id], 5, &pump[id].CurrentMonitoringTaskHAndle, 0);
+  vTaskSuspend(pump[id].CurrentMonitoringTaskHAndle);
+  switch_pump_id_to_state(id,P_OFF);
 	pump_num++;
 }
 
@@ -333,24 +348,46 @@ int measure_flowrate()
 	if(TimePastVolumeMeasured==0)  TimePastVolumeMeasured=esp_timer_get_time();
 	uint64_t Volume_measure_delta_time; 
   
-	int delta_volume_cnt=0;
+	int delta_volume_cnt1=0;
+  int delta_volume_cnt2=0;
 	ESP_ERROR_CHECK(pcnt_unit_get_count(pump[running_pump_ID].pcnt_unit, &pump[running_pump_ID].daily_pump_flowmeter_counts));
-  delta_volume_cnt=pump[running_pump_ID].daily_pump_flowmeter_counts-pump[running_pump_ID].prev_daily_pump_flowmeter_counts;
+  delta_volume_cnt1=pump[running_pump_ID].daily_pump_flowmeter_counts-pump[running_pump_ID].prev_daily_pump_flowmeter_counts;
   pump[running_pump_ID].prev_daily_pump_flowmeter_counts=pump[running_pump_ID].daily_pump_flowmeter_counts;
+  delta_volume_cnt2=pump[running_pump_ID].daily_pump_flowmeter_counts-pump[running_pump_ID].prev_daily_pump_flowmeter_counts_flowmeter;
+  
 	
-	if (((Volume_measure_delta_time=(esp_timer_get_time() - TimePastVolumeMeasured)) >= Volume_measure_interval_us) && (delta_volume_cnt>5))
+	if (((Volume_measure_delta_time=(esp_timer_get_time() - TimePastVolumeMeasured)) >= Volume_measure_interval_us) && (delta_volume_cnt2>5))
     {
 	   char message[32];  
      float volume_rate_liter_per_min;	
-     volume_rate_liter_per_min= 60*convertCNT2Liter(delta_volume_cnt)/(1.0*Volume_measure_delta_time/1000000.0);
+     volume_rate_liter_per_min= 60*convertCNT2Liter(delta_volume_cnt2)/(1.0*Volume_measure_delta_time/1000000.0);
      sprintf(message,"%0.1f l/min %0.1f l",volume_rate_liter_per_min,convertCNT2Liter(pump[running_pump_ID].daily_pump_flowmeter_counts-pump[running_pump_ID].cnt_at_pump_start));
      Write_Msg_toDisplay(5,message);
+     pump[running_pump_ID].prev_daily_pump_flowmeter_counts_flowmeter=pump[running_pump_ID].daily_pump_flowmeter_counts;
 	   TimePastVolumeMeasured = esp_timer_get_time(); // get next publish time
     }
-	return delta_volume_cnt;
+	return delta_volume_cnt1;
   }
   else return 0;
 }
+
+
+
+bool check_flowrate(int pump_id,int looptime_ms) 
+{
+  int delta_cnt=0;
+  static int lastCNT=-162;
+  int actCNT;
+	ESP_ERROR_CHECK(pcnt_unit_get_count(pump[pump_id].pcnt_unit, &actCNT));
+  delta_cnt=actCNT-lastCNT;
+  lastCNT=actCNT;
+	return (delta_cnt>pump[pump_id].flow_rate_protection_limit_dl_per_min/10*YF_DN32_PULSE_PER_LITER/60*looptime_ms/1000);
+}
+
+
+
+
+
 
 void install_pcnt(int id)
 {
@@ -426,3 +463,30 @@ float getsinkvolume(int id) {return pump[id].sink_volume;}
 
 float get_max_current(int id) {return pump[id].max_current;}
 void  set_max_current(int id, float imax) {pump[id].max_current=imax;}
+
+void  set_flow_rate_protection_limit_dl_per_min(int id, int flow_min_dlper_min) {pump[id].flow_rate_protection_limit_dl_per_min=flow_min_dlper_min;}
+
+void Chek_pump_current_and_flow_rate_task(void *pvParameters)
+{
+ T_pump *actpump= (T_pump *)pvParameters;
+ESP_LOGI("DEBUG_TASK", "Chek_pump_current_and_flow_rate_task for pumpID:%d",actpump->ID);
+ TickType_t xLastWakeTime;
+ const TickType_t xFrequency = 2.5*1000 / portTICK_PERIOD_MS; 
+ xLastWakeTime = xTaskGetTickCount();
+ bool measure_flow_flag=false;
+ while (true)
+ {
+  vTaskDelayUntil( &xLastWakeTime, xFrequency );
+  ESP_LOGI("DEBUG_TASK", "Chek_pump_current_and_flow_rate_task for pumpID:%d",actpump->ID);
+  xSemaphoreTake(I2C_mutex, portMAX_DELAY);
+  double irms= MeasuredValue(ACS71020_address_default, 0x20, 0x7fff0000, 0,16,14,30.0);
+  //double p=    MeasuredValue(ACS71020_address_default, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs);
+  xSemaphoreGive(I2C_mutex);
+  if (irms>actpump->max_current)    switch_pump_id_to_state(actpump->ID,P_OVER_CURRENT);
+  if (measure_flow_flag)
+   if (!check_flowrate(actpump->ID,2*xFrequency*portTICK_PERIOD_MS)) switch_pump_id_to_state(actpump->ID,P_FLOW_PROT);
+  measure_flow_flag=(!measure_flow_flag); 
+ }
+}
+
+

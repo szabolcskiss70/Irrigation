@@ -45,7 +45,8 @@ extern long read_ACS71020_register(int ACS71020_address, int reg_address, long m
 void read_ACS71020_register2(int reg_addr,long value);
 
 
-#define ACS71020_address_default 0x66
+#define ACS71020_address_default 0x61 
+//orig: 0x66
 #define Rs 1000.0
 #define R1_4 2000000.0
 

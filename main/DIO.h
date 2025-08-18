@@ -4,6 +4,7 @@
 // FreeRTOS includes
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "lora.h"
 
 #include "mcp23018.h"
 

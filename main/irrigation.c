@@ -148,7 +148,7 @@ typedef bool T_MQTT_Sub_Callback(char* ltopic, char* ldata, bool MQTT,char wilca
 
 
 #define BROKER_URL "mqtt://szabolcskiss.ddns.net:1883"
-char *maintopic="IRRIGATION";
+char *maintopic="IRRIGATION2";
 
 
 const esp_app_desc_t *app_desc;
@@ -160,7 +160,7 @@ typedef enum {STARTED,RESUMED,INIT,ENABLED,DISABLED,SUSPENDED,DELAY,FINISHED,END
 char* str_states[NOREQUEST-STARTED+1]={"STARTED","RESUMED","INIT","ENABLED","DISABLED","SUSPENDED","DELAY","FINISHED","END","IDLE","REBOOTED","NOREQUEST"};
 char* str_short_states[NOREQUEST-STARTED+1]={"START","RES","INIT","ENAB","DIS","SUSP","DELAY","FIN","END","IDLE","REBO","NO_REQ"};
 typedef enum {OFF,LEVEL,POWER,CT,STACK,LOG,VOLUME,DEBUG} T_measure_mode;
-typedef enum {USE_BLE,USE_WIFI,USE_ACS71020,MAIN_TASK,TEMPSENSOR,CURRENTSENSOR,MEASURE_LEVEL,MEASURE_POWER,POWERMETER_TASK,USE_LORA} T_run_mode_bits;
+typedef enum {USE_BLE,USE_WIFI,USE_ACS71020,MAIN_TASK,HANDLE_SCHEDULED,MOTOR_CURRENT_PROT,TEMPSENSOR,CURRENTSENSOR,MEASURE_LEVEL,MEASURE_POWER,POWERMETER_TASK,USE_LORA} T_run_mode_bits;
 int run_mode=(1<<USE_BLE) | (1<<USE_WIFI);
 bool USE_MCP=false;
 
@@ -193,7 +193,7 @@ char MQTT_BLE_answer[2048]="";
 
 
 void mainTask(void *pvParameters);
-static SemaphoreHandle_t I2C_mutex;
+SemaphoreHandle_t I2C_mutex;
 static SemaphoreHandle_t mqtt_ble_mutex;
 static SemaphoreHandle_t MAIN_TASK_mutex;
 
@@ -333,7 +333,10 @@ typedef struct{
 
 uint8_t lora_receive_buf[32];
 
-#define CHANNEL_NUM 3
+#define MAX_CHANNEL_NUM 3
+#define MAX_PUMP_NUM 2
+int channel_number=3;
+int pump_number=1;
 #define PERIODS 10
 typedef struct{
 	char Name[8]; //Name of the channel
@@ -360,7 +363,7 @@ typedef struct{
 	int last_sink_flowmeter_counts;
     T_pump_list assigned_pump;
 } T_channel;
-T_channel channels[CHANNEL_NUM];
+T_channel channels[MAX_CHANNEL_NUM];
 
 
 void init_channel(int ch, char* name, int GPIO, bool fix_preassure)
@@ -1142,6 +1145,34 @@ bool PUMP_PARAM_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][
 				 }
 				 else sprintf(MQTT_BLE_answer,"%s %s", "pump_restart_delay","invalid format!"); 
 		}
+		else if (strcmp(wilcarded_topic[0],"FLOW_RATE_MIN")==0)
+		{
+				int intval;
+				 if(sscanf(ldata,"%d",&intval)==1) 
+				 {
+					 if ((intval>=10) && (intval<=1200)) 
+					 {
+						 set_flow_rate_protection_limit_dl_per_min(ch,intval);
+						 sprintf(MQTT_BLE_answer,"FLOW_RATE_MIN pump%d: %ddl/min",ch,intval); 
+					 }
+					 else sprintf(MQTT_BLE_answer,"%s %s", "FLOW_RATE_MIN","Out of range"); 
+				 }
+				 else sprintf(MQTT_BLE_answer,"%s %s", "FLOW_RATE_MIN","invalid format!"); 
+		}
+		else if (strcmp(wilcarded_topic[0],"MAX_CURRENT")==0)
+		{
+				int intval;
+				 if(sscanf(ldata,"%d",&intval)==1) 
+				 {
+					 if ((intval>=0) && (intval<=10000)) 
+					 {
+						 set_max_current(ch,intval/1000);   
+						 sprintf(MQTT_BLE_answer,"MAX_CURRENT pump%d: %dmA",ch,intval); 
+					 }
+					 else sprintf(MQTT_BLE_answer,"%s %s", "MAX_CURRENT","Out of range"); 
+				 }
+				 else sprintf(MQTT_BLE_answer,"%s %s", "MAX_CURRENT","invalid format!"); 
+		}	
 		else 
 		{
 			sprintf(MQTT_BLE_answer,"%s %s", "Invalid parameter",wilcarded_topic[0]);
@@ -1283,8 +1314,8 @@ return true;
 int get_Channel_from_wildcarded(char wilcarded_topic[5][32])
 {
 	int ch;
-    if ((strlen(wilcarded_topic[1])==1) && (sscanf(wilcarded_topic[1],"%d",&ch)==1) && (ch>0) && (ch<=CHANNEL_NUM)) return (ch-1);
-     for (ch=0;ch<CHANNEL_NUM;ch++)
+    if ((strlen(wilcarded_topic[1])==1) && (sscanf(wilcarded_topic[1],"%d",&ch)==1) && (ch>0) && (ch<=MAX_CHANNEL_NUM)) return (ch-1);
+     for (ch=0;ch<MAX_CHANNEL_NUM;ch++)
 	 {
 	  if(strcmp(channels[ch].Name,wilcarded_topic[1])==0) return ch;
      }
@@ -1309,7 +1340,7 @@ bool CHANNEL_schedule_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_top
 			 int volume=0;
 			 period--;
 			 ESP_LOGI(TAG, "CH:%d,period:%d",ch,period);
-			 if((ch>=0) && (ch<CHANNEL_NUM) && (period>=0) && (period<PERIODS))
+			 if((ch>=0) && (ch<MAX_CHANNEL_NUM) && (period>=0) && (period<PERIODS))
 			 {
 			  if(sscanf(ldata,"%2d:%2d-%2d:%2d [%c%c%c%c%c%c%c] %d %d",&HH_on,&MM_on,&HH_off,&MM_off,&weekdays[0],&weekdays[1],&weekdays[2],&weekdays[3],&weekdays[4],&weekdays[5],&weekdays[6],&duration,&volume)==13)
 			  {
@@ -1382,7 +1413,7 @@ bool restart_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32]
                 if(strcmp(ldata,"ESP")==0) 	
 				{
 					prevhour=0;
-					for(int ch=0;ch<CHANNEL_NUM;ch++) 
+					for(int ch=0;ch<MAX_CHANNEL_NUM;ch++) 
 					{
 						switch_channel(ch,DISABLED);
 						vTaskDelay(1*1000 / portTICK_PERIOD_MS);
@@ -1410,10 +1441,10 @@ bool temp___CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 				sprintf(MQTT_BLE_answer,"%0.2f°C",temperature);
 				return true;
 			}
-bool run_mode_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])			
+bool param_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])			
 			{
 				int intval;
-				 if(sscanf(ldata,"%d",&intval)==1) 
+				 if(sscanf(ldata,"RUN_MODE:%d",&intval)==1) 
 				 {
 					 if ((intval>=0) && (intval<(1<<(USE_LORA+1)))) 
 					 {
@@ -1427,6 +1458,28 @@ bool run_mode_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32
 						 {
 						  if (xSemaphoreTake(MAIN_TASK_mutex, 0)==pdFALSE)  xTaskCreatePinnedToCore(&mainTask, "mainTask", 4096, NULL, 5, NULL, 0);
 						 }*/
+					 }
+				 }
+				 else if(sscanf(ldata,"CHANNEL_NUM:%d",&intval)==1) 
+				 {
+					 if ((intval>=0) && (intval<=MAX_CHANNEL_NUM)) 
+					 {
+						char msg[16];
+						 channel_number=intval;
+						 Save_data_to_NVS();
+				         sprintf(msg,"%d",channel_number);
+			             sprintf(MQTT_BLE_answer,"%s {%d}", "channel_number",channel_number); 
+					 }
+				 }
+				 else if(sscanf(ldata,"PUMP_NUM:%d",&intval)==1) 
+				 {
+					 if ((intval>=0) && (intval<=MAX_PUMP_NUM)) 
+					 {
+						char msg[16];
+						 pump_number=intval;
+						 Save_data_to_NVS();
+				         sprintf(msg,"%d",pump_number);
+			             sprintf(MQTT_BLE_answer,"%s {%d}", "channel_number",pump_number); 
 					 }
 				 }
 			return true;
@@ -1451,7 +1504,7 @@ bool CHANNEL_request_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topi
 	{
 				int i;
 				ESP_LOGI(TAG, "CHANNEL/%s/request",channels[ch].Name);
-				if((ch>=0) && (ch<CHANNEL_NUM))
+				if((ch>=0) && (ch<MAX_CHANNEL_NUM))
 				{char unit;
 				 for(i=STARTED;i<=NOREQUEST;i++)
 				 {
@@ -1479,7 +1532,7 @@ bool LIST_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 	if (strcmp(ldata,"CHANNELS")==0)
 	{ 	
 	 MQTT_BLE_answer[0]=0;
-	 for(int ch=0;ch<CHANNEL_NUM;ch++)
+	 for(int ch=0;ch<MAX_CHANNEL_NUM;ch++)
 	 {
 	  sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"CH%d %8s:%16s (Pump:%d)\n",ch+1,channels[ch].Name,str_states[channels[ch].channel_state],channels[ch].assigned_pump);	
       append_ontimes2string(ch);		
@@ -1605,8 +1658,8 @@ ACS71020/WRITE {0xhex_address=0xhex_value}";
 return true;
 }
 
-char* subscribe_topics[]=                   {"LIFE" ,"FIRMWARE/URL" ,"FIRMWARE/SELECT_URL" ,"FIRMWARE/VERSION" ,"FIRMWARE/ROLLBACK" ,"CHANNEL/+/REQUEST"      ,"CHANNEL/+/STATISTIC"      ,"CHANNEL/+/SCHEDULE/#"    ,"RESTART" ,"MEASURE_MODE" ,"LEVEL/?" ,"TIME/?"  ,"ACS71020/READ" ,"ACS71020/WRITE" ,"TEMP/?" ,"HELP" ,"PUMP/+/REQUEST" ,"PUMP/?" ,"RUN_MODE" ,"RUN_MODE/?","LIST","CHANNEL/+/PARAM/#","CHANNEL/+/TIMES","DEBUG","PUMP/+/PARAM/#"};
-T_MQTT_Sub_Callback *MQTT_Sub_Callbacks[]=  {LIFE_CB,FIRMWARE_URL_CB,FIRMWARE_SELECT_URL_CB,FIRMWARE_VERSION_CB,FIRMWARE_ROLLBACK_CB,CHANNEL_request_CB,CHANNEL_statistic_CB,CHANNEL_schedule_CB,restart_CB,measure_mode_CB,LEVEL___CB,TIME___CB,ACS71020_read_CB,ACS71020_write_CB,temp___CB,help_CB,PUMP_CB,PUMP___CB,run_mode_CB,run_mode___CB,LIST_CB,CHANNEL_PARAM_CB,CHANNEL_TIMES_CB,DEBUG_CB,PUMP_PARAM_CB}; 
+char* subscribe_topics[]=                   {"LIFE" ,"FIRMWARE/URL" ,"FIRMWARE/SELECT_URL" ,"FIRMWARE/VERSION" ,"FIRMWARE/ROLLBACK" ,"CHANNEL/+/REQUEST"      ,"CHANNEL/+/STATISTIC"      ,"CHANNEL/+/SCHEDULE/#"    ,"RESTART" ,"MEASURE_MODE" ,"LEVEL/?" ,"TIME/?"  ,"ACS71020/READ" ,"ACS71020/WRITE" ,"TEMP/?" ,"HELP" ,"PUMP/+/REQUEST" ,"PUMP/?" ,"PARAM" ,"RUN_MODE/?","LIST","CHANNEL/+/PARAM/#","CHANNEL/+/TIMES","DEBUG","PUMP/+/PARAM/#"};
+T_MQTT_Sub_Callback *MQTT_Sub_Callbacks[]=  {LIFE_CB,FIRMWARE_URL_CB,FIRMWARE_SELECT_URL_CB,FIRMWARE_VERSION_CB,FIRMWARE_ROLLBACK_CB,CHANNEL_request_CB,CHANNEL_statistic_CB,CHANNEL_schedule_CB,restart_CB,measure_mode_CB,LEVEL___CB,TIME___CB,ACS71020_read_CB,ACS71020_write_CB,temp___CB,help_CB,PUMP_CB,PUMP___CB,param_CB,run_mode___CB,LIST_CB,CHANNEL_PARAM_CB,CHANNEL_TIMES_CB,DEBUG_CB,PUMP_PARAM_CB}; 
 
 
 bool Process_EVENT_DATA(char* ltopic, char* ldata, bool MQTT)
@@ -2310,7 +2363,7 @@ void testValveSwitching()
   double p_standby=    MeasuredValue(ACS71020_address_default, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs);
  xSemaphoreGive(I2C_mutex); 
  double p_valve;
- for(int ch=0;ch<CHANNEL_NUM;ch++)
+ for(int ch=0;ch<MAX_CHANNEL_NUM;ch++)
  {
    writeDO(channels[ch].Valve_GPIO_OUTPUT, true);
    vTaskDelay(3*1000 / portTICK_PERIOD_MS);
@@ -2327,7 +2380,7 @@ void testValveSwitching()
 
 bool isSingleChannelTurnedON(int ch)
 {
- for (int i=0; i<CHANNEL_NUM; i++)
+ for (int i=0; i<MAX_CHANNEL_NUM; i++)
  {
   if ((ch!=i) && channels[i].Channel_pump_ON)	return false; 
  }	 
@@ -2336,7 +2389,7 @@ bool isSingleChannelTurnedON(int ch)
 
 
 void mainTask(void *pvParameters){
-  ds18b20_init(DS_PIN);
+  
  
   int msg_id;
   int ch,i;
@@ -2349,11 +2402,12 @@ void mainTask(void *pvParameters){
 
   time(&time_at_start);
   int      TimeToPublish = 600000000; //in uS
+  if (run_mode & (1<<TEMPSENSOR)) ds18b20_init(DS_PIN);
   
   xEventGroupWaitBits(s_wifi_event_group, MQTT_CONNECTED_BIT, false, false, 30*1000 / portTICK_PERIOD_MS); 
   
 
-   for(ch=0;ch<CHANNEL_NUM;ch++) 
+   for(ch=0;ch<MAX_CHANNEL_NUM;ch++) 
    {
 	if(channels[ch].channel_disabled) switch_channel(ch,DISABLED);
 	else  switch_channel(ch,REBOOTED);
@@ -2364,7 +2418,7 @@ void mainTask(void *pvParameters){
  
 
   while (!(FW_update_available) && strlen(OTA_SOURCE_URL) && ((run_mode & (1<<MAIN_TASK))>0)) {
-	  if(measure_mode==STACK)
+	if(measure_mode==STACK)
 	  { char message[64];
 	    int unused_stack=  uxTaskGetStackHighWaterMark(NULL); 
 		if(mqtt_connected)
@@ -2373,21 +2427,15 @@ void mainTask(void *pvParameters){
 		esp_wifi_sta_get_ap_info(&ap);
 		sprintf(message,"unused_stack:%dbytes, runtime:%llds, RSSSI:%d",unused_stack, runtime, ap.rssi);
 		my_esp_mqtt_client_publish(mqtt_client, "MEASURE/STACK", message, 0, 0, 0);   //Qos=0; retain=0
-	
-		}
-		
+		}	
 	  }
  			
- 	
 
-
-	     
-	
 	if((FW_update_available) && strlen(OTA_SOURCE_URL))
 	{
 	 my_esp_mqtt_client_publish(mqtt_client, "FIRMWARE/UPDATE", "started", 0, 0, 0);   //Qos=0; retain=0	
 	 
-	 for(ch=0;ch<CHANNEL_NUM;ch++) switch_channel(ch,DISABLED);
+	 for(ch=0;ch<MAX_CHANNEL_NUM;ch++) switch_channel(ch,DISABLED);
 			
 	 break;
 	}
@@ -2414,7 +2462,7 @@ void mainTask(void *pvParameters){
 		time_t now2;
 	    time(&now2);
 		
-		for(ch=0;ch<CHANNEL_NUM;ch++) 
+		for(ch=0;ch<MAX_CHANNEL_NUM;ch++) 
 		{
 			channels[ch].prev_daily_period_ontimes=0; //erase ontime at daychange
 			channels[ch].period_volume=0; //erase volume at daychange
@@ -2442,7 +2490,7 @@ void mainTask(void *pvParameters){
 	 }
 	
 	 MQTT_BLE_answer[0]=0;	
-	 for(i=0;i<CHANNEL_NUM;i++) append_ontimes2string(i);
+	 for(i=0;i<MAX_CHANNEL_NUM;i++) append_ontimes2string(i);
 	 my_esp_mqtt_client_publish(mqtt_client, "REPORT/ONTIME", MQTT_BLE_answer, 0, 0, 0);   //Qos=0; retain=0
 
 	 
@@ -2453,7 +2501,7 @@ void mainTask(void *pvParameters){
 	 prevhour=hour;
 	}
 	
-	for(ch=0;ch<CHANNEL_NUM;ch++) //auto switch off of manually on channels
+	for(ch=0;ch<MAX_CHANNEL_NUM;ch++) //auto switch off of manually on channels
 	{		
      if(channels[ch].manual_mode)
 	 {
@@ -2465,7 +2513,7 @@ void mainTask(void *pvParameters){
 	 }
 	}
 
-    for(ch=0;ch<CHANNEL_NUM;ch++) //manual switches
+    for(ch=0;ch<MAX_CHANNEL_NUM;ch++) //manual switches
 	{		
      if (channels[ch].manual_change_request!=NOREQUEST)
 	 {
@@ -2511,7 +2559,7 @@ void mainTask(void *pvParameters){
 		 
 	if (delta_volume_cnt>0) //waterflow
 	{
-	 for(ch=0; ch<CHANNEL_NUM;ch++) 
+	 for(ch=0; ch<MAX_CHANNEL_NUM;ch++) 
 	 {
 		 if (isSingleChannelTurnedON(ch)) {channels[ch].daily_volume+=delta_volume_cnt;channels[ch].period_volume+=delta_volume_cnt;} 
 		 else
@@ -2534,7 +2582,9 @@ void mainTask(void *pvParameters){
 	
 	time2nextperiodstart=86400;
 	
-	for(ch=0;ch<CHANNEL_NUM;ch++)
+	if (run_mode & (1<<HANDLE_SCHEDULED))
+	{
+	for(ch=0;ch<MAX_CHANNEL_NUM;ch++)
 	{
 	 if (channels[ch].channel_disabled) continue; 	
 	 for(i=0;i<PERIODS;i++)
@@ -2572,7 +2622,7 @@ void mainTask(void *pvParameters){
 	   }		
 	 }// for periods
 	}//for channel
-	
+    }
 
 
     }
@@ -2581,7 +2631,7 @@ void mainTask(void *pvParameters){
 	switch (check_pump_protection(now))
 	{
 	 case P_SUSPENDED:
-	      for(ch=0;ch<CHANNEL_NUM;ch++) 
+	      for(ch=0;ch<MAX_CHANNEL_NUM;ch++) 
 		  { 
 	        switch(channels[ch].channel_state)
 			{ //switch active channels to SUSPENDED
@@ -2595,7 +2645,7 @@ void mainTask(void *pvParameters){
 		  Write_Msg_toDisplay(2,"pump suspended");
 		  break;
      case P_DELAY:
-	      for(ch=0;ch<CHANNEL_NUM;ch++)
+	      for(ch=0;ch<MAX_CHANNEL_NUM;ch++)
 			 { 
 			  if(channels[ch].channel_state==SUSPENDED) 
 			   {				   
@@ -2604,7 +2654,7 @@ void mainTask(void *pvParameters){
 			 } 
 	      break;
      case P_RESUMED:
-	 		for(ch=0;ch<CHANNEL_NUM;ch++)
+	 		for(ch=0;ch<MAX_CHANNEL_NUM;ch++)
 			{ 
 			 switch(channels[ch].channel_state)
 			 {
@@ -2628,10 +2678,10 @@ void mainTask(void *pvParameters){
 	{
 	
 		 char message[32]="";
-		 for(ch=0;ch<CHANNEL_NUM;ch++)
+		 for(ch=0;ch<MAX_CHANNEL_NUM;ch++)
 		 {
 		  strcat(message,str_short_states[channels[ch].channel_state]);
-	      if (ch<CHANNEL_NUM-1) strcat(message," ");
+	      if (ch<MAX_CHANNEL_NUM-1) strcat(message," ");
 		 }
 		 Write_Msg_toDisplay(0,message);
 		  
@@ -2993,6 +3043,31 @@ void ota_update_task(void *pvParameter)
 }
 
 
+void Load_general_data_from_NVS()
+{
+    nvs_handle_t nvs_handle;
+	 int i,ch;
+	 size_t buf_len;
+	 int ret;
+	 long int intval;
+    if((ret=nvs_open("my_NVS", NVS_READWRITE, &nvs_handle))!=ESP_OK) ESP_LOGI(TAG, "NVS open failed. %d",ret);
+	
+	if(nvs_get_i32(nvs_handle, "run_mode",&intval)==ESP_OK) run_mode=(int)intval | (1<<USE_BLE) /*| (1<<USE_WIFI)*/;
+	ESP_LOGI(TAG, "run_mode:%d",run_mode);
+
+	if((nvs_get_i32(nvs_handle, "pump_number",&intval)==ESP_OK) && (intval<=MAX_PUMP_NUM) && (intval>=0)) pump_number=(int)intval;
+	ESP_LOGI(TAG, "pump_number:%d",pump_number);
+
+	if((nvs_get_i32(nvs_handle, "channel_number",&intval)==ESP_OK) && (intval<=MAX_CHANNEL_NUM) && (intval>=0)) channel_number=(int)intval;
+	ESP_LOGI(TAG, "channel_number:%d",channel_number);
+    
+    nvs_close(nvs_handle);
+}
+
+
+
+
+
 void Load_data_from_NVS()
 {
     nvs_handle_t nvs_handle;
@@ -3002,10 +3077,10 @@ void Load_data_from_NVS()
 	 long int intval;
     if((ret=nvs_open("my_NVS", NVS_READWRITE, &nvs_handle))!=ESP_OK) ESP_LOGI(TAG, "NVS open failed. %d",ret);
 	
-	if(nvs_get_i32(nvs_handle, "run_mode",&intval)==ESP_OK) run_mode=(int)intval | (1<<USE_BLE) | (1<<USE_WIFI);;
+	if(nvs_get_i32(nvs_handle, "run_mode",&intval)==ESP_OK) run_mode=(int)intval | (1<<USE_BLE) /*| (1<<USE_WIFI);*/;
 	ESP_LOGI(TAG, "run_mode:%d",run_mode);
 
-    for (ch=0;ch<2;ch++)
+    for (ch=0;ch<pump_number;ch++)
    {
      char keyName[32];
      uint8_t uint8val;
@@ -3027,7 +3102,7 @@ void Load_data_from_NVS()
 
    }
 
-	for (ch=0;ch<CHANNEL_NUM;ch++)
+	for (ch=0;ch<channel_number;ch++)
     {
 	  char keyName[32];   //CHx_x 
 	  long int keyvalue;
@@ -3082,7 +3157,9 @@ void Save_data_to_NVS()
    // TEST_ESP_OK(nvs_erase_all(nvs_handle));
    
 	nvs_set_i32(nvs_handle, "run_mode",run_mode);
-  
+	nvs_set_i32(nvs_handle, "pump_number",pump_number);
+	nvs_set_i32(nvs_handle, "channel_number",channel_number);
+
    for (ch=0;ch<2;ch++)
    {
      char keyName[32];
@@ -3104,7 +3181,7 @@ void Save_data_to_NVS()
 
    }
 
-   for (ch=0;ch<CHANNEL_NUM;ch++)
+   for (ch=0;ch<MAX_CHANNEL_NUM;ch++)
    {
 	 char keyName[32];   //CHx_x 
 	 sprintf(keyName,"CH%1.1d_NAME",ch);
@@ -3141,7 +3218,7 @@ void Save_data_to_NVS()
 void delete_all_chedules()
 {
  int i;
- for(i=0;i<CHANNEL_NUM;i++) memset(channels[i].Chedule_array,0,sizeof(channels[i].Chedule_array));
+ for(i=0;i<MAX_CHANNEL_NUM;i++) memset(channels[i].Chedule_array,0,sizeof(channels[i].Chedule_array));
  Save_data_to_NVS();
 }
 
@@ -3151,10 +3228,13 @@ void task_rx(void *p)
    for(;;) {
       lora_receive();    // put into receive mode
       while(lora_received()) {
-         x = lora_receive_packet(lora_receive_buf, sizeof(lora_receive_buf));
+		 int port;
+		 int value;
+         x = lora_receive_packet(lora_receive_buf, sizeof(lora_receive_buf)-1);
          lora_receive_buf[x] = 0;
          printf("Received: %s\n", lora_receive_buf);
 		 ESP_LOGI(TAG, "Received: %s\n", lora_receive_buf);
+		 if(sscanf((char*)lora_receive_buf,"DIO%d:%d",&port,&value)==2) writeDO(port,(value==1)?true:false);
          lora_receive();
       }
       vTaskDelay(1);
@@ -3626,12 +3706,32 @@ void app_main()
    if (err!=ESP_OK) ESP_LOGI(TAG, "NVS INIT ERROR %d",err);
 	ESP_ERROR_CHECK(err);   
  
+    Load_general_data_from_NVS();   
+/*
+pump_number=1;
+channel_number=0;
+run_mode=7;
+Save_data_to_NVS();*/
 
 
-	init_pump(0,GPIO_OUTPUT_PUMP_1,ISOLATED_INPUT_PUMP_1,ISOLATED_INPUT_2,true,true); 
-	init_channel(0,"CH0",GPIO_OUTPUT_OUT_2,true);
-	init_channel(1,"CH1",GPIO_OUTPUT_OUT_3,false);
-	init_channel(2,"CH2",GPIO_OUTPUT_OUT_4,true);
+
+	switch (pump_number)
+	{
+	  case 2: init_pump(1,1000+GPIO_OUTPUT_PUMP_1,-1,-1,false,false); 
+	  case 1: init_pump(0,GPIO_OUTPUT_PUMP_1,ISOLATED_INPUT_PUMP_1,ISOLATED_INPUT_2,true,true); 
+			  break;
+	  default: break;
+
+	}
+
+	switch (channel_number)
+	{
+      case 3: init_channel(2,"CH2",GPIO_OUTPUT_OUT_4,true);
+	  case 2: init_channel(1,"CH1",GPIO_OUTPUT_OUT_3,false);
+	  case 1: init_channel(0,"CH0",GPIO_OUTPUT_OUT_2,true);	
+			  break;
+	  default: break;
+	}
 
 //	delete_all_chedules();
     I2C_mutex = xSemaphoreCreateMutex();
@@ -3747,7 +3847,7 @@ void app_main()
         //lora_dump_registers();
 		xTaskCreate(&task_rx, "task_rx", 2048, NULL, 5, NULL);
 
-      if(false)
+      if(true)
 	  {
         lora_dump_registers();
 
@@ -3761,7 +3861,7 @@ void app_main()
 		lora_receive_buf[3]='T';
 		lora_receive_buf[4]=0;*/
 
-        lora_send_packet(lora_receive_buf,sizeof(lora_receive_buf));
+        lora_send_packet(lora_receive_buf,sizeof(lora_receive_buf)-1);
 		ESP_LOGI("LORA","package%d sent",sendcount);
 		vTaskDelay(2*1000 / portTICK_PERIOD_MS);
 		}
@@ -3787,7 +3887,7 @@ void app_main()
 
 
 
-    xEventGroupWaitBits(s_wifi_event_group, MQTT_CONNECTED_BIT, false, false, 120*1000 / portTICK_PERIOD_MS); 
+    if (run_mode & (1<<USE_WIFI)) xEventGroupWaitBits(s_wifi_event_group, MQTT_CONNECTED_BIT, false, false, 120*1000 / portTICK_PERIOD_MS); 
 	testValveSwitching();
 
 	 append_log(LOG_FILE,"Rebooted. run_mode=%d\n",run_mode); 
@@ -3853,7 +3953,26 @@ void app_main()
     }
 
 
+    while (false)
+	{//HW test of slave
+		 char msg[256];
+		 writeDO(23, false);
+		 ESP_LOGI("SLAVE_TEST","bit23 value: %d",0);
+		 ESP_LOGI("TEST_DI","ISOLATED_INPUT_PUMP_1=%d",readDI(ISOLATED_INPUT_PUMP_1));
 
+		 vTaskDelay(2*1000 / portTICK_PERIOD_MS);
+		 writeDO(23, true);
+		ESP_LOGI("SLAVE_TEST","bit23 value: %d",1);
+		ESP_LOGI("TEST_DI","ISOLATED_INPUT_PUMP_1=%d",readDI(ISOLATED_INPUT_PUMP_1));
+		 vTaskDelay(2*1000 / portTICK_PERIOD_MS);
+	
+		 GetPumpStatusString(0,msg,sizeof(msg)-1);
+		 ESP_LOGI("SLAVE_TEST","pump status: %s",msg);
+
+		double urms= MeasuredValue(ACS71020_address_default, 0x20, 0x00007fff, 0, 0,15,0.275*(R1_4+Rs)/Rs); 
+		ESP_LOGI("SLAVE_TEST","urms: %lf",urms);
+
+	}
 
 
 }

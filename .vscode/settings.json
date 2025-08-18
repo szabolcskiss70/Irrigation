@@ -23,6 +23,7 @@
     "thread": "c",
     "chrono": "c",
     "fstream": "c",
-    "cstdio": "c"
+    "cstdio": "c",
+    "task.h": "c"
   }
 }

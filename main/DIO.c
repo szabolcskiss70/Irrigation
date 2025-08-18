@@ -6,13 +6,19 @@ i2c_master_dev_handle_t MCP_dev_handle;
 
 void writeDO(int portbit, bool value)
 {
+ uint8_t lora_send_buf[32];   
  switch (portbit)
  {
-  case 0 ... 39: gpio_set_level(portbit,value);
-             break;
-  case 100 ... 115:  portbit-=100;              
-                 mcp23018_write_bit  (MCP_dev_handle,(portbit<=7)?portbit:portbit-8, MCP23018_GPIO, (portbit<=7)?GPIOA:GPIOB,value);
-                 break;          
+  case 0 ... 39:        gpio_set_level(portbit,value);
+                        break;
+  case 100 ... 115:     portbit-=100;              
+                        mcp23018_write_bit  (MCP_dev_handle,(portbit<=7)?portbit:portbit-8, MCP23018_GPIO, (portbit<=7)?GPIOA:GPIOB,value);
+                        break;    
+  case 1000 ... 1039:   portbit-=1000;  
+                        sprintf((char*)lora_send_buf,"DIO%d:%d",portbit,(int)value);
+                        lora_send_packet(lora_send_buf,sizeof(lora_send_buf)-1);
+                        break;
+
  }
 }
 
