@@ -1,3 +1,4 @@
+//MQTT Broaker: https://github.com/martin-ger/esp_mqtt
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_system.h"
@@ -331,7 +332,7 @@ typedef struct{
 } T_chedule_data;
 
 
-uint8_t lora_receive_buf[32];
+uint8_t lora_receive_buf[256];
 
 #define MAX_CHANNEL_NUM 3
 #define MAX_PUMP_NUM 2
@@ -1114,6 +1115,21 @@ bool PUMP_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
    
 }
 
+
+uint8_t lora_transmit_buf[256];
+bool TO_SLAVE_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
+{
+	if (run_mode & (1<<USE_LORA))
+	{
+	 MQTT_BLE_answer[0]=0;	
+ 	 sprintf((char*)lora_transmit_buf,"IRRMOSI_%lu_%s",xTaskGetTickCount(),ldata); 
+	 lora_send_packet(lora_transmit_buf,strlen((char*)lora_transmit_buf)); 
+	}
+	else sprintf(MQTT_BLE_answer,"%s", "LORA not enabled");
+	return true;
+}
+
+
 bool PUMP_PARAM_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 {
   int ch;	
@@ -1658,8 +1674,8 @@ ACS71020/WRITE {0xhex_address=0xhex_value}";
 return true;
 }
 
-char* subscribe_topics[]=                   {"LIFE" ,"FIRMWARE/URL" ,"FIRMWARE/SELECT_URL" ,"FIRMWARE/VERSION" ,"FIRMWARE/ROLLBACK" ,"CHANNEL/+/REQUEST"      ,"CHANNEL/+/STATISTIC"      ,"CHANNEL/+/SCHEDULE/#"    ,"RESTART" ,"MEASURE_MODE" ,"LEVEL/?" ,"TIME/?"  ,"ACS71020/READ" ,"ACS71020/WRITE" ,"TEMP/?" ,"HELP" ,"PUMP/+/REQUEST" ,"PUMP/?" ,"PARAM" ,"RUN_MODE/?","LIST","CHANNEL/+/PARAM/#","CHANNEL/+/TIMES","DEBUG","PUMP/+/PARAM/#"};
-T_MQTT_Sub_Callback *MQTT_Sub_Callbacks[]=  {LIFE_CB,FIRMWARE_URL_CB,FIRMWARE_SELECT_URL_CB,FIRMWARE_VERSION_CB,FIRMWARE_ROLLBACK_CB,CHANNEL_request_CB,CHANNEL_statistic_CB,CHANNEL_schedule_CB,restart_CB,measure_mode_CB,LEVEL___CB,TIME___CB,ACS71020_read_CB,ACS71020_write_CB,temp___CB,help_CB,PUMP_CB,PUMP___CB,param_CB,run_mode___CB,LIST_CB,CHANNEL_PARAM_CB,CHANNEL_TIMES_CB,DEBUG_CB,PUMP_PARAM_CB}; 
+char* subscribe_topics[]=                   {"LIFE" ,"FIRMWARE/URL" ,"FIRMWARE/SELECT_URL" ,"FIRMWARE/VERSION" ,"FIRMWARE/ROLLBACK" ,"CHANNEL/+/REQUEST"      ,"CHANNEL/+/STATISTIC"      ,"CHANNEL/+/SCHEDULE/#"    ,"RESTART" ,"MEASURE_MODE" ,"LEVEL/?" ,"TIME/?"  ,"ACS71020/READ" ,"ACS71020/WRITE" ,"TEMP/?" ,"HELP" ,"PUMP/+/REQUEST" ,"PUMP/?" ,"PARAM" ,"RUN_MODE/?","LIST","CHANNEL/+/PARAM/#","CHANNEL/+/TIMES","DEBUG","PUMP/+/PARAM/#","TO_SLAVE"};
+T_MQTT_Sub_Callback *MQTT_Sub_Callbacks[]=  {LIFE_CB,FIRMWARE_URL_CB,FIRMWARE_SELECT_URL_CB,FIRMWARE_VERSION_CB,FIRMWARE_ROLLBACK_CB,CHANNEL_request_CB,CHANNEL_statistic_CB,CHANNEL_schedule_CB,restart_CB,measure_mode_CB,LEVEL___CB,TIME___CB,ACS71020_read_CB,ACS71020_write_CB,temp___CB,help_CB,PUMP_CB,PUMP___CB,param_CB,run_mode___CB,LIST_CB,CHANNEL_PARAM_CB,CHANNEL_TIMES_CB,DEBUG_CB,PUMP_PARAM_CB,TO_SLAVE_CB}; 
 
 
 bool Process_EVENT_DATA(char* ltopic, char* ldata, bool MQTT)
@@ -3052,7 +3068,7 @@ void Load_general_data_from_NVS()
 	 long int intval;
     if((ret=nvs_open("my_NVS", NVS_READWRITE, &nvs_handle))!=ESP_OK) ESP_LOGI(TAG, "NVS open failed. %d",ret);
 	
-	if(nvs_get_i32(nvs_handle, "run_mode",&intval)==ESP_OK) run_mode=(int)intval | (1<<USE_BLE) /*| (1<<USE_WIFI)*/;
+	if(nvs_get_i32(nvs_handle, "run_mode",&intval)==ESP_OK) run_mode=(int)intval | (1<<USE_BLE) | (1<<USE_WIFI);
 	ESP_LOGI(TAG, "run_mode:%d",run_mode);
 
 	if((nvs_get_i32(nvs_handle, "pump_number",&intval)==ESP_OK) && (intval<=MAX_PUMP_NUM) && (intval>=0)) pump_number=(int)intval;
@@ -3077,7 +3093,7 @@ void Load_data_from_NVS()
 	 long int intval;
     if((ret=nvs_open("my_NVS", NVS_READWRITE, &nvs_handle))!=ESP_OK) ESP_LOGI(TAG, "NVS open failed. %d",ret);
 	
-	if(nvs_get_i32(nvs_handle, "run_mode",&intval)==ESP_OK) run_mode=(int)intval | (1<<USE_BLE) /*| (1<<USE_WIFI);*/;
+	if(nvs_get_i32(nvs_handle, "run_mode",&intval)==ESP_OK) run_mode=(int)intval | (1<<USE_BLE) | (1<<USE_WIFI);
 	ESP_LOGI(TAG, "run_mode:%d",run_mode);
 
     for (ch=0;ch<pump_number;ch++)
@@ -3234,8 +3250,27 @@ void task_rx(void *p)
          lora_receive_buf[x] = 0;
          printf("Received: %s\n", lora_receive_buf);
 		 ESP_LOGI(TAG, "Received: %s\n", lora_receive_buf);
-		 if(sscanf((char*)lora_receive_buf,"DIO%d:%d",&port,&value)==2) writeDO(port,(value==1)?true:false);
-         lora_receive();
+		 //if(sscanf((char*)lora_receive_buf,"DIO%d:%d",&port,&value)==2) writeDO(port,(value==1)?true:false);
+		 {  char ltopic[256];
+			char ldata[256];
+			unsigned long tick;
+			memset(ltopic,0,sizeof(ltopic));
+			memset(ldata,0,sizeof(ldata));
+    		if (sscanf((char*)lora_receive_buf,"IRRMOSI_%lu_%[^=]=%[^\n]",&tick,ltopic,ldata)==3)
+			{
+			 to_upper(ltopic,ltopic);
+			 Process_EVENT_DATA(ltopic,ltopic,false);
+			 sprintf((char*)lora_transmit_buf,"IRRMISO_%.240s DONE",lora_receive_buf+7); 
+			 lora_send_packet(lora_transmit_buf,strlen((char*)lora_transmit_buf)); 
+			}
+			if (sscanf((char*)lora_receive_buf,"IRRMISO_%lu_%[^=]=%[^\n]",&tick,ltopic,ldata)==3)
+			{
+				 my_esp_mqtt_client_publish(mqtt_client, "SLAVE/ACK", (char*)lora_receive_buf, 0, 0, 0);   //Qos=1; retain=1
+			}
+		
+
+		 }
+		 lora_receive();
       }
       vTaskDelay(1);
    }
@@ -3714,7 +3749,6 @@ run_mode=7;
 Save_data_to_NVS();*/
 
 
-
 	switch (pump_number)
 	{
 	  case 2: init_pump(1,1000+GPIO_OUTPUT_PUMP_1,-1,-1,false,false); 
@@ -3783,6 +3817,8 @@ Save_data_to_NVS();*/
 	
 
     init_display();
+
+
 	if (USE_MCP) Init_DIO(Display._i2c_bus_handle);
     if(readDI(PRG_BUTTON)==0) {run_mode=(1<<USE_BLE);Save_data_to_NVS();esp_restart();}
 
@@ -3847,7 +3883,7 @@ Save_data_to_NVS();*/
         //lora_dump_registers();
 		xTaskCreate(&task_rx, "task_rx", 2048, NULL, 5, NULL);
 
-      if(true)
+      if(false)
 	  {
         lora_dump_registers();
 

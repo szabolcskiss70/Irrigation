@@ -11,6 +11,8 @@ extern float water_level;
 
 void install_pcnt();
 void Chek_pump_current_and_flow_rate_task(void *pvParameters);
+static void level_switch_monitoring_task(void* arg);
+static void pump_switching_task(void* arg);
 #define EXAMPLE_PCNT_HIGH_LIMIT 32767
 #define EXAMPLE_PCNT_LOW_LIMIT -1
 
@@ -82,8 +84,6 @@ void switch_pump_ch_relay(int id,bool on_state)
   }
  } 
 	running_pump_ID=(on_state==true)?id:-1;
-  if (on_state) vTaskResume(pump[id].CurrentMonitoringTaskHAndle);
-  else vTaskSuspend(pump[id].CurrentMonitoringTaskHAndle);
   writeDO(pump[id].GPIO_PUMP, (on_state==true)?1:0);	
   pump[id].pump_running=on_state;
  
@@ -135,13 +135,14 @@ void init_pump(int id, int GPIO_PUMP, int GPIO_PROT,int GPIO_CNT,bool prio, bool
     pump[id].prev_daily_pump_flowmeter_counts_flowmeter=0;
 	install_pcnt(id);
   set_DIO_direction(GPIO_PUMP,GPIO_MODE_OUTPUT);
-  set_DIO_direction(GPIO_PROT,GPIO_MODE_INPUT);
+  set_DIO_interrupt(GPIO_PROT,GPIO_MODE_INPUT,GPIO_INTR_ANYEDGE);
+  xTaskCreate(&level_switch_monitoring_task, "level_switch_monitoring_task", 2048, NULL, 10, NULL);
   pump[id].flow_rate_protection_limit_dl_per_min=50; //50dl/min ->5l/min
   sprintf(Chek_pump_current_task_name,"pump%d_current_task",id);
-  xTaskCreatePinnedToCore(&Chek_pump_current_and_flow_rate_task, Chek_pump_current_task_name, 4096, &pump[id], 5, &pump[id].CurrentMonitoringTaskHAndle, 0);
-  vTaskSuspend(pump[id].CurrentMonitoringTaskHAndle);
+  xTaskCreate(&Chek_pump_current_and_flow_rate_task, Chek_pump_current_task_name, 4096, &pump[id], 5, &pump[id].CurrentMonitoringTaskHAndle);
   switch_pump_id_to_state(id,P_OFF);
 	pump_num++;
+  if(pump_num>1) xTaskCreate(&pump_switching_task, "pump_switching_task", 4096, NULL, 5, NULL);
 }
 
 
@@ -199,6 +200,37 @@ float convertCNT2Liter(int delta_volume_cnt)
   return(1.0*delta_volume_cnt/YF_DN32_PULSE_PER_LITER);
 }
 
+typedef enum {P0,P1,NO}T_active_pump_suspended;
+T_active_pump_suspended active_pump_suspended=NO; 
+static void pump_switching_task(void* arg)
+{
+ while (true)
+ {
+  if (active_pump_suspended!=NO) 
+  {
+    if (isPUMP_available(other_pump(active_pump_suspended))) 
+    {
+    switch_pump_id_to_state(other_pump(active_pump_suspended),P_ON); //switch to an other pump
+    active_pump_suspended=NO;
+    }
+  }
+  if (is_low_prio_pump_running())
+  {
+    if ((pump[other_pump(running_pump_ID)].switchbackifavailable) && (now_pump()-pump[running_pump_ID].last_pump_on_time)>pump[other_pump(running_pump_ID)].pump_restart_delay)
+      if (isPUMP_available(other_pump(running_pump_ID))) 
+      {
+        int other_pump_ID=other_pump(running_pump_ID);
+        switch_pump_id_to_state(running_pump_ID,P_OFF);
+        switch_pump_id_to_state(other_pump_ID,P_ON);
+      }
+  }
+  vTaskDelay(1000 / portTICK_PERIOD_MS);
+ }
+}
+
+
+
+
 /**
  * @brief check pump protection imputs and change pump states, needs to be called periodicaly
  * 
@@ -212,68 +244,6 @@ float convertCNT2Liter(int delta_volume_cnt)
  */
 T_pump_states check_pump_protection()
 {
-  typedef enum {PUMP1,PUMP2,NO}T_active_pump_suspended;
-  T_active_pump_suspended active_pump_suspended=NO; 
-  for (int id=0;id<pump_num;id++)	
-  {
-	if(readDI(pump[id].GPIO_PROT))
-	{
-			if(pump[id].status!=P_SUSPENDED)
-			{		
-			ESP_LOGI("PUMP","PUMP SUSPENDED");  
-			pump[id].pump_protection_started_at=now_pump();
-			pump[id].protection_level_off=water_level;
-			pump[id].sink_time=now_pump()-pump[id].last_pump_on_time;
-      pcnt_unit_get_count(pump[running_pump_ID].pcnt_unit, &pump[running_pump_ID].cnt_at_pump_suspend);
-      pump[id].sink_volume=convertCNT2Liter(pump[running_pump_ID].cnt_at_pump_suspend-pump[running_pump_ID].cnt_at_pump_start);
-			}
-      if (running_pump_ID==id) active_pump_suspended=id;
-      switch_pump_id_to_state(id,P_SUSPENDED);
-	}
-	else
-	{
-		if	(get_pump_id_state(id)==P_SUSPENDED)
-		{
-      pump[id].protection_level_on=water_level;
-			pump[id].fill_time=now_pump()-pump[id].pump_protection_started_at;
-		}
-		
-    if	(get_pump_id_state(id)==P_SUSPENDED || get_pump_id_state(id)==P_DELAY)
-		{
-
-			if((now_pump()-pump[id].pump_protection_started_at)/60>=pump[id].pump_restart_delay)
-			{
-				ESP_LOGI(TAG,"PUMP_RESUMED");
-				Write_Msg_toDisplay(2,"pump resumed");
-        switch_pump_id_to_state(id,P_RESUMED);
-			}
-			else {
-				char message[32];
-				sprintf(message,"waiting:%llds",(int)pump[id].pump_restart_delay*60+pump[id].pump_protection_started_at-now_pump()); 
-				ESP_LOGI(TAG,"WAITING FOR RESTART DELAY");
-				Write_Msg_toDisplay(2,message);
-				pump[id].protection_level_on=water_level;
-				pump[id].fill_time=now_pump()-pump[id].pump_protection_started_at;
-				switch_pump_id_to_state(id,P_DELAY);
-				
-			}
-		}	
-	}
- }
-
- if ((pump_num==2) && (active_pump_suspended!=NO)) switch_pump_id_to_state(other_pump(active_pump_suspended),P_ON); //switch to an other pump
-
- if (is_low_prio_pump_running())
- {
-  if ((pump[other_pump(running_pump_ID)].switchbackifavailable) && (now_pump()-pump[running_pump_ID].last_pump_on_time)>pump[other_pump(running_pump_ID)].pump_restart_delay)
-  if (isPUMP_available(other_pump(running_pump_ID))) 
-  {
-    int other_pump_ID=other_pump(running_pump_ID);
-    switch_pump_id_to_state(running_pump_ID,P_OFF);
-    switch_pump_id_to_state(other_pump_ID,P_ON);
-  }
- }
-
  return ((pump_num==2)?(pump[0].status>pump[1].status)?pump[0].status:pump[1].status:pump[0].status);
 }
 
@@ -466,15 +436,72 @@ void  set_max_current(int id, float imax) {pump[id].max_current=imax;}
 
 void  set_flow_rate_protection_limit_dl_per_min(int id, int flow_min_dlper_min) {pump[id].flow_rate_protection_limit_dl_per_min=flow_min_dlper_min;}
 
+
+
+static void level_switch_monitoring_task(void* arg)
+{
+  int id;  
+  uint32_t io_num;
+    for (;;) {
+        if (xQueueReceive(gpio_evt_queue, &io_num, portMAX_DELAY)) {
+         printf("GPIO[%"PRIu32"] intr, val: %d\n", io_num, gpio_get_level(io_num));
+         for (id=0;id<pump_num;id++) if(pump[id].GPIO_PROT==io_num) break;
+ 
+         if(readDI(pump[id].GPIO_PROT))
+          {
+              if(pump[id].status!=P_SUSPENDED)
+              {		
+              ESP_LOGI("PUMP","PUMP SUSPENDED");  
+              pump[id].pump_protection_started_at=now_pump();
+              pump[id].protection_level_off=water_level;
+              pump[id].sink_time=now_pump()-pump[id].last_pump_on_time;
+              pcnt_unit_get_count(pump[running_pump_ID].pcnt_unit, &pump[running_pump_ID].cnt_at_pump_suspend);
+              pump[id].sink_volume=convertCNT2Liter(pump[running_pump_ID].cnt_at_pump_suspend-pump[running_pump_ID].cnt_at_pump_start);
+              }
+              if (running_pump_ID==id) active_pump_suspended=id;
+              switch_pump_id_to_state(id,P_SUSPENDED);
+          }
+	        else
+          {
+            if	(get_pump_id_state(id)==P_SUSPENDED)
+            {
+              pump[id].protection_level_on=water_level;
+              pump[id].fill_time=now_pump()-pump[id].pump_protection_started_at;
+            }
+            
+            if	(get_pump_id_state(id)==P_SUSPENDED || get_pump_id_state(id)==P_DELAY)
+            {
+
+              if((now_pump()-pump[id].pump_protection_started_at)/60>=pump[id].pump_restart_delay)
+              {
+                ESP_LOGI(TAG,"PUMP_RESUMED");
+                Write_Msg_toDisplay(2,"pump resumed");
+                switch_pump_id_to_state(id,P_RESUMED);
+              }
+              else {
+                char message[32];
+                sprintf(message,"waiting:%llds",(int)pump[id].pump_restart_delay*60+pump[id].pump_protection_started_at-now_pump()); 
+                ESP_LOGI(TAG,"WAITING FOR RESTART DELAY");
+                Write_Msg_toDisplay(2,message);
+                pump[id].protection_level_on=water_level;
+                pump[id].fill_time=now_pump()-pump[id].pump_protection_started_at;
+                switch_pump_id_to_state(id,P_DELAY);
+              }
+            }	
+          }
+        }
+    }
+}
+
+
 void Chek_pump_current_and_flow_rate_task(void *pvParameters)
 {
  T_pump *actpump= (T_pump *)pvParameters;
 ESP_LOGI("DEBUG_TASK", "Chek_pump_current_and_flow_rate_task for pumpID:%d",actpump->ID);
  TickType_t xLastWakeTime;
- const TickType_t xFrequency = 2.5*1000 / portTICK_PERIOD_MS; 
+ const TickType_t xFrequency = 1000 / portTICK_PERIOD_MS; 
  xLastWakeTime = xTaskGetTickCount();
- bool measure_flow_flag=false;
- while (true)
+ for(long run_cnt=1;;run_cnt++)
  {
   vTaskDelayUntil( &xLastWakeTime, xFrequency );
   ESP_LOGI("DEBUG_TASK", "Chek_pump_current_and_flow_rate_task for pumpID:%d",actpump->ID);
@@ -482,10 +509,8 @@ ESP_LOGI("DEBUG_TASK", "Chek_pump_current_and_flow_rate_task for pumpID:%d",actp
   double irms= MeasuredValue(ACS71020_address_default, 0x20, 0x7fff0000, 0,16,14,30.0);
   //double p=    MeasuredValue(ACS71020_address_default, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs);
   xSemaphoreGive(I2C_mutex);
-  if (irms>actpump->max_current)    switch_pump_id_to_state(actpump->ID,P_OVER_CURRENT);
-  if (measure_flow_flag)
-   if (!check_flowrate(actpump->ID,2*xFrequency*portTICK_PERIOD_MS)) switch_pump_id_to_state(actpump->ID,P_FLOW_PROT);
-  measure_flow_flag=(!measure_flow_flag); 
+  if (irms>actpump->max_current) switch_pump_id_to_state(actpump->ID,P_OVER_CURRENT);
+  if ((run_cnt%5==0) && (get_pump_id_state(actpump->ID)==P_ON) && (!check_flowrate(actpump->ID,2*xFrequency*portTICK_PERIOD_MS))) switch_pump_id_to_state(actpump->ID,P_FLOW_PROT);
  }
 }
 

@@ -3,6 +3,15 @@
 
 i2c_master_dev_handle_t MCP_dev_handle;
 
+#define ESP_INTR_FLAG_DEFAULT 0
+
+
+
+static void IRAM_ATTR gpio_isr_handler(void* arg)
+{
+    uint32_t gpio_num = (uint32_t) arg;
+    xQueueSendFromISR(gpio_evt_queue, &gpio_num, NULL);
+}
 
 void writeDO(int portbit, bool value)
 {
@@ -58,4 +67,24 @@ void set_DIO_direction(int portbit,gpio_mode_t mode)
                  break;   
  
  }   
+}
+
+
+void set_DIO_interrupt(int portbit,gpio_mode_t mode, gpio_int_type_t intr_type)
+{
+    gpio_config_t io_conf;
+    io_conf.intr_type = intr_type;
+    io_conf.pin_bit_mask = (1<<portbit);
+    io_conf.mode = mode;
+    io_conf.pull_up_en = 1;
+    gpio_config(&io_conf);
+
+    //create a queue to handle gpio event from isr
+    gpio_evt_queue = xQueueCreate(10, sizeof(uint32_t));
+    
+
+    //install gpio isr service
+    gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
+    //hook isr handler for specific gpio pin
+    gpio_isr_handler_add(portbit, gpio_isr_handler, (void*) portbit);
 }
