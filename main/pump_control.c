@@ -3,6 +3,8 @@
 #include "esp_timer.h"
 #include "DIO.h"
 #include "ACS71020.h"
+#include "lora_comm.h"
+
 
 extern SemaphoreHandle_t I2C_mutex;
 
@@ -11,8 +13,8 @@ extern float water_level;
 
 void install_pcnt();
 void Chek_pump_current_and_flow_rate_task(void *pvParameters);
-static void level_switch_monitoring_task(void* arg);
-static void pump_switching_task(void* arg);
+static void level_switch_monitoring_task(void* pvParameters);
+static void pump_switching_task(void* pvParameters);
 #define EXAMPLE_PCNT_HIGH_LIMIT 32767
 #define EXAMPLE_PCNT_LOW_LIMIT -1
 
@@ -53,12 +55,27 @@ void clear_volumes_at_midnight()
  prev_now=now;
 }
 
+int getvaluefromslave(char* msg)
+{
+ uint8_t lora_transmit_buf[256];
+	//if (run_mode & (1<<USE_LORA))
+	{	
+ 	 sprintf((char*)lora_transmit_buf,"IRRMGETI_%lu_%s",xTaskGetTickCount(),msg); 
+	 lora_send_packet(lora_transmit_buf,strlen((char*)lora_transmit_buf)); 
+   //wait4notify
+   return (INT_result);
+	}
+
+}
 
 
 
 T_pump_states get_pump_id_state(int id)
 {
- return (pump[id].status);
+ if (id==0)  return (pump[id].status);
+ return((T_pump_states) getvaluefromslave("get_pump_id_state"));
+
+
 }
 
 
@@ -114,7 +131,7 @@ void switch_pump_id_to_state(int id, T_pump_states new_state)
 
 void init_pump(int id, int GPIO_PUMP, int GPIO_PROT,int GPIO_CNT,bool prio, bool switchbackifavailable)
 {
-  char Chek_pump_current_task_name[32];
+  char pump_prot_task_name[32];
 	pump[id].ID=id;
   pump[id].pump_running=false;
 	pump[id].GPIO_PUMP=GPIO_PUMP;
@@ -136,10 +153,11 @@ void init_pump(int id, int GPIO_PUMP, int GPIO_PROT,int GPIO_CNT,bool prio, bool
 	install_pcnt(id);
   set_DIO_direction(GPIO_PUMP,GPIO_MODE_OUTPUT);
   set_DIO_interrupt(GPIO_PROT,GPIO_MODE_INPUT,GPIO_INTR_ANYEDGE);
-  xTaskCreate(&level_switch_monitoring_task, "level_switch_monitoring_task", 2048, NULL, 10, NULL);
+  sprintf(pump_prot_task_name,"pump%d_level_task",id);
+  xTaskCreate(&level_switch_monitoring_task, "pump_prot_task_name", 4096, &pump[id], 10, NULL);
   pump[id].flow_rate_protection_limit_dl_per_min=50; //50dl/min ->5l/min
-  sprintf(Chek_pump_current_task_name,"pump%d_current_task",id);
-  xTaskCreate(&Chek_pump_current_and_flow_rate_task, Chek_pump_current_task_name, 4096, &pump[id], 5, &pump[id].CurrentMonitoringTaskHAndle);
+  sprintf(pump_prot_task_name,"pump%d_current_task",id);
+  xTaskCreate(&Chek_pump_current_and_flow_rate_task, pump_prot_task_name, 4096, &pump[id], 10, &pump[id].CurrentMonitoringTaskHAndle);
   switch_pump_id_to_state(id,P_OFF);
 	pump_num++;
   if(pump_num>1) xTaskCreate(&pump_switching_task, "pump_switching_task", 4096, NULL, 5, NULL);
@@ -202,7 +220,7 @@ float convertCNT2Liter(int delta_volume_cnt)
 
 typedef enum {P0,P1,NO}T_active_pump_suspended;
 T_active_pump_suspended active_pump_suspended=NO; 
-static void pump_switching_task(void* arg)
+static void pump_switching_task(void* pvParameters)
 {
  while (true)
  {
@@ -251,7 +269,7 @@ bool isPUMP_disabled_or_suspended()
 {
   for (int id=0;id<pump_num;id++)	
   {
-   if ((pump[id].status!=P_DISABLED) && (pump[id].status!=P_SUSPENDED)) return false;
+   if ((get_pump_id_state(id)!=P_DISABLED) && (get_pump_id_state(id)!=P_SUSPENDED)) return false;
   }
   return true;
 }
@@ -262,7 +280,7 @@ void GetPumpStatusString(int id, char* message, int buf_size)
 {
  pcnt_unit_get_count(pump[id].pcnt_unit, &pump[id].daily_pump_flowmeter_counts);
  char *MsgFormat= "P%d: Status:%s, Daily Volume:%1.1f";
- if (buf_size>strlen(MsgFormat)+8) sprintf(message,"P%d: Status:%s, Daily Volume:%1.1fl",id+1,PUMP_status_str[pump[id].status],convertCNT2Liter(pump[id].daily_pump_flowmeter_counts));
+ if (buf_size>strlen(MsgFormat)+8) sprintf(message,"P%d: Status:%s, Daily Volume:%1.1fl",id+1,PUMP_status_str[get_pump_id_state(id)],convertCNT2Liter(pump[id].daily_pump_flowmeter_counts));
 }
 
 void getpumptimechanges(int id, char* message, int buf_size)
@@ -271,13 +289,6 @@ void getpumptimechanges(int id, char* message, int buf_size)
 			{
 				if (buf_size>64) sprintf(message+strlen(message),"ID:%d %s: %lld\n",id,PUMP_status_str[i],pump[id].status_change_time[i]);
 			}
-}
-
-
-
-T_pump_states GetPumpStatus(int id)
-{
- return(pump[id].status);
 }
 
 void set_restart_delay(int id, int restart_delay)
@@ -421,7 +432,7 @@ void GetVolumeString(char *result_string)
 
 bool isPUMP_disabled(int id) {return(get_pump_id_state(id)==P_DISABLED);}
 
-bool isPUMP_available(int id) {return(pump[id].status>=P_OFF);}
+bool isPUMP_available(int id) {return(get_pump_id_state(id)>=P_OFF);}
 
 
 bool getPUMP_prio(int id) {return(pump[id].prio);}
@@ -438,18 +449,18 @@ void  set_flow_rate_protection_limit_dl_per_min(int id, int flow_min_dlper_min) 
 
 
 
-static void level_switch_monitoring_task(void* arg)
+static void level_switch_monitoring_task(void* pvParameters)
 {
-  int id;  
+  T_pump *actpump= (T_pump *)pvParameters;
+  int id=actpump->ID;  
   uint32_t io_num;
     for (;;) {
-        if (xQueueReceive(gpio_evt_queue, &io_num, portMAX_DELAY)) {
-         printf("GPIO[%"PRIu32"] intr, val: %d\n", io_num, gpio_get_level(io_num));
-         for (id=0;id<pump_num;id++) if(pump[id].GPIO_PROT==io_num) break;
- 
+        if (xQueueReceive(gpio_evt_queue, &io_num, portMAX_DELAY) || get_pump_id_state(id)==P_SUSPENDED || get_pump_id_state(id)==P_DELAY)
+        {
+         printf("GPIO[%"PRIu32"] intr, val: %d\n", io_num, gpio_get_level(io_num)); 
          if(readDI(pump[id].GPIO_PROT))
           {
-              if(pump[id].status!=P_SUSPENDED)
+              if(get_pump_id_state(id)!=P_SUSPENDED)
               {		
               ESP_LOGI("PUMP","PUMP SUSPENDED");  
               pump[id].pump_protection_started_at=now_pump();
@@ -488,6 +499,7 @@ static void level_switch_monitoring_task(void* arg)
                 switch_pump_id_to_state(id,P_DELAY);
               }
             }	
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
           }
         }
     }
