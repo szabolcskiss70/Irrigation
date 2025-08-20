@@ -40,7 +40,7 @@
 #include "lwip/netdb.h"
 
 #include "mqtt_client.h"
-#include "lora.h"
+#include "lora_comm.h"
 #include "math.h"
 #include "esp_timer.h"
 
@@ -332,7 +332,7 @@ typedef struct{
 } T_chedule_data;
 
 
-uint8_t lora_receive_buf[256];
+
 
 #define MAX_CHANNEL_NUM 3
 #define MAX_PUMP_NUM 2
@@ -1116,7 +1116,7 @@ bool PUMP_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 }
 
 
-uint8_t lora_transmit_buf[256];
+
 bool TO_SLAVE_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 {
 	if (run_mode & (1<<USE_LORA))
@@ -3238,46 +3238,6 @@ void delete_all_chedules()
  Save_data_to_NVS();
 }
 
-void task_rx(void *p)
-{
-   int x;
-   for(;;) {
-      lora_receive();    // put into receive mode
-      while(lora_received()) {
-		 int port;
-		 int value;
-         x = lora_receive_packet(lora_receive_buf, sizeof(lora_receive_buf)-1);
-         lora_receive_buf[x] = 0;
-         printf("Received: %s\n", lora_receive_buf);
-		 ESP_LOGI(TAG, "Received: %s\n", lora_receive_buf);
-		 //if(sscanf((char*)lora_receive_buf,"DIO%d:%d",&port,&value)==2) writeDO(port,(value==1)?true:false);
-		 {  char ltopic[256];
-			char ldata[256];
-			unsigned long tick;
-			memset(ltopic,0,sizeof(ltopic));
-			memset(ldata,0,sizeof(ldata));
-    		if (sscanf((char*)lora_receive_buf,"IRRMOSI_%lu_%[^=]=%[^\n]",&tick,ltopic,ldata)==3)
-			{
-			 to_upper(ltopic,ltopic);
-			 Process_EVENT_DATA(ltopic,ltopic,false);
-			 sprintf((char*)lora_transmit_buf,"IRRMISO_%.240s DONE",lora_receive_buf+7); 
-			 lora_send_packet(lora_transmit_buf,strlen((char*)lora_transmit_buf)); 
-			}
-			if (sscanf((char*)lora_receive_buf,"IRRMISO_%lu_%[^=]=%[^\n]",&tick,ltopic,ldata)==3)
-			{
-				 my_esp_mqtt_client_publish(mqtt_client, "SLAVE/ACK", (char*)lora_receive_buf, 0, 0, 0);   //Qos=1; retain=1
-			}
-		
-
-		 }
-		 lora_receive();
-      }
-      vTaskDelay(1);
-   }
-}
-
- 
-
 
 
 void PowerMeterTask(void *pvParameters){
@@ -3866,43 +3826,8 @@ Save_data_to_NVS();*/
 
 
 
-    if (run_mode & (1<<USE_LORA))
-	{   ESP_LOGI("LORA","Start init lora");
-		int sendcount=0;
-		int err=lora_init();
-		ESP_LOGI("LORA","Init: %d",err);
-		//lora_initialized();
-
-		lora_set_frequency(433775000);
-		lora_set_spreading_factor(12);
-		lora_set_tx_power(17);
-		lora_set_bandwidth(125000);
-		lora_set_coding_rate(8);
-		//lora_enable_crc();
-
-        //lora_dump_registers();
-		xTaskCreate(&task_rx, "task_rx", 2048, NULL, 5, NULL);
-
-      if(false)
-	  {
-        lora_dump_registers();
-
- 		ESP_LOGI("LORA","Start sending packets");
-        for (sendcount=0;sendcount<1000;sendcount++)
-		{
-		sprintf((char*)lora_receive_buf,"TEst%d",sendcount);
-		/*lora_receive_buf[0]='T';
-		lora_receive_buf[1]='E';
-		lora_receive_buf[2]='S';
-		lora_receive_buf[3]='T';
-		lora_receive_buf[4]=0;*/
-
-        lora_send_packet(lora_receive_buf,sizeof(lora_receive_buf)-1);
-		ESP_LOGI("LORA","package%d sent",sendcount);
-		vTaskDelay(2*1000 / portTICK_PERIOD_MS);
-		}
-	 }
-	}	
+    if (run_mode & (1<<USE_LORA)) init_lora();
+	
 
     if (run_mode & (1<<USE_WIFI)) initialise_wifi();
 
