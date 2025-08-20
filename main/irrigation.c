@@ -3702,7 +3702,7 @@ void app_main()
 	ESP_ERROR_CHECK(err);   
 
 	
-	  esp_log_level_set("*", ESP_LOG_ERROR);
+//	  esp_log_level_set("*", ESP_LOG_ERROR);
 	  
 	  Mount_my_Filesystem("user_fs");
 	  //remove(LOG_FILE);
