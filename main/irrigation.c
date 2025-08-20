@@ -3705,7 +3705,7 @@ void app_main()
 	  esp_log_level_set("*", ESP_LOG_ERROR);
 	  
 	  Mount_my_Filesystem("user_fs");
-	  remove(LOG_FILE);
+	  //remove(LOG_FILE);
 	  append_log(LOG_FILE,"Rebooted\n");
 	  _log_remote_fp=fopen(LOG_FILE,"w+");
       esp_log_set_vprintf(&_log_vprintf);	
