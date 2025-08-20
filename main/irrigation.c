@@ -149,7 +149,7 @@ typedef bool T_MQTT_Sub_Callback(char* ltopic, char* ldata, bool MQTT,char wilca
 
 
 #define BROKER_URL "mqtt://szabolcskiss.ddns.net:1883"
-char *maintopic="IRRIGATION2";
+char *maintopic="IRRIGATION";
 
 
 const esp_app_desc_t *app_desc;
