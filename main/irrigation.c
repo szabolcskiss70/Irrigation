@@ -3700,7 +3700,17 @@ void app_main()
 	
    if (err!=ESP_OK) ESP_LOGI(TAG, "NVS INIT ERROR %d",err);
 	ESP_ERROR_CHECK(err);   
- 
+
+	
+	  esp_log_level_set("*", ESP_LOG_ERROR);
+	  
+	  Mount_my_Filesystem("user_fs");
+	  remove(LOG_FILE);
+	  append_log(LOG_FILE,"Rebooted\n");
+	  _log_remote_fp=fopen(LOG_FILE,"w+");
+      esp_log_set_vprintf(&_log_vprintf);	
+
+
     Load_general_data_from_NVS();   
 /*
 pump_number=1;
@@ -3736,7 +3746,7 @@ Save_data_to_NVS();*/
     if (run_mode & (1<<USE_BLE)) init_BLE();
 
 	Load_data_from_NVS();
-    Mount_my_Filesystem("user_fs");
+
 
 	
 	 gpio_config_t io_conf;
