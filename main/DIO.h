@@ -24,7 +24,7 @@ void writeDO(int portbit, bool value);
 bool readDI(int portbit);
 void set_DIO_direction(int portbit,gpio_mode_t mode);
 void set_DIO_interrupt(int portbit,gpio_mode_t mode, gpio_int_type_t intr_type);
-static QueueHandle_t gpio_evt_queue = NULL;
+extern QueueHandle_t gpio_evt_queue;
 
 
 #endif

@@ -449,13 +449,9 @@ void  set_flow_rate_protection_limit_dl_per_min(int id, int flow_min_dlper_min) 
 
 
 
-static void level_switch_monitoring_task(void* pvParameters)
-{
-  T_pump *actpump= (T_pump *)pvParameters;
-  int id=actpump->ID;  
-  uint32_t io_num;
-    for (;;) {
-        if (xQueueReceive(gpio_evt_queue, &io_num, portMAX_DELAY) || get_pump_id_state(id)==P_SUSPENDED || get_pump_id_state(id)==P_DELAY)
+
+
+void check_pump_protection_GPIB_input(int id,uint32_t io_num)
         {
          printf("GPIO[%"PRIu32"] intr, val: %d\n", io_num, gpio_get_level(io_num)); 
          if(readDI(pump[id].GPIO_PROT))
@@ -502,6 +498,20 @@ static void level_switch_monitoring_task(void* pvParameters)
             vTaskDelay(1000 / portTICK_PERIOD_MS);
           }
         }
+
+
+
+
+
+
+static void level_switch_monitoring_task(void* pvParameters)
+{
+  T_pump *actpump= (T_pump *)pvParameters;
+  uint32_t io_num;
+    for (;;) {
+        if (get_pump_id_state(actpump->ID)==P_SUSPENDED || get_pump_id_state(actpump->ID)==P_DELAY) check_pump_protection_GPIB_input(actpump->ID, io_num);
+        else if (xQueueReceive(gpio_evt_queue, &io_num, 200)==pdPASS) check_pump_protection_GPIB_input(actpump->ID, io_num);
+             else ESP_LOGI("DEBUG_TASK", "level_switch_monitoring_task is waiting");
     }
 }
 

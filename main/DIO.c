@@ -6,7 +6,7 @@ i2c_master_dev_handle_t MCP_dev_handle;
 #define ESP_INTR_FLAG_DEFAULT 0
 
 
-
+QueueHandle_t gpio_evt_queue;
 static void IRAM_ATTR gpio_isr_handler(void* arg)
 {
     uint32_t gpio_num = (uint32_t) arg;
