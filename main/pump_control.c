@@ -451,9 +451,8 @@ void  set_flow_rate_protection_limit_dl_per_min(int id, int flow_min_dlper_min) 
 
 
 
-void check_pump_protection_GPIB_input(int id,uint32_t io_num)
+void check_pump_protection_GPIB_input(int id)
         {
-         printf("GPIO[%"PRIu32"] intr, val: %d\n", io_num, gpio_get_level(io_num)); 
          if(readDI(pump[id].GPIO_PROT))
           {
               if(get_pump_id_state(id)!=P_SUSPENDED)
@@ -509,9 +508,12 @@ static void level_switch_monitoring_task(void* pvParameters)
   T_pump *actpump= (T_pump *)pvParameters;
   uint32_t io_num;
     for (;;) {
-        if (get_pump_id_state(actpump->ID)==P_SUSPENDED || get_pump_id_state(actpump->ID)==P_DELAY) check_pump_protection_GPIB_input(actpump->ID, io_num);
-        else if (xQueueReceive(gpio_evt_queue, &io_num, 200)==pdPASS) check_pump_protection_GPIB_input(actpump->ID, io_num);
-             else ESP_LOGI("DEBUG_TASK", "level_switch_monitoring_task is waiting");
+        if (xQueueReceive(gpio_evt_queue, &io_num, 200)==pdPASS) 
+        {
+          printf("GPIO[%"PRIu32"] intr, val: %d\n", io_num, gpio_get_level(io_num)); 
+          check_pump_protection_GPIB_input(actpump->ID);
+        }
+        else ESP_LOGI("DEBUG_TASK", "level_switch_monitoring_task is waiting");
     }
 }
 
@@ -533,7 +535,25 @@ ESP_LOGI("DEBUG_TASK", "Chek_pump_current_and_flow_rate_task for pumpID:%d",actp
   xSemaphoreGive(I2C_mutex);
   if (irms>actpump->max_current) switch_pump_id_to_state(actpump->ID,P_OVER_CURRENT);
   if ((run_cnt%5==0) && (get_pump_id_state(actpump->ID)==P_ON) && (!check_flowrate(actpump->ID,2*xFrequency*portTICK_PERIOD_MS))) switch_pump_id_to_state(actpump->ID,P_FLOW_PROT);
- }
+  if (get_pump_id_state(actpump->ID)==P_DELAY) 
+  {
+   if((now_pump()-pump[actpump->ID].pump_protection_started_at)/60>=pump[actpump->ID].pump_restart_delay)
+              {
+                ESP_LOGI(TAG,"PUMP_RESUMED");
+                Write_Msg_toDisplay(2,"pump resumed");
+                switch_pump_id_to_state(actpump->ID,P_RESUMED);
+              }
+   else
+   {
+                char message[32];
+                sprintf(message,"waiting:%llds",(int)pump[actpump->ID].pump_restart_delay*60+pump[actpump->ID].pump_protection_started_at-now_pump()); 
+                ESP_LOGI(TAG,"WAITING FOR RESTART DELAY");
+                Write_Msg_toDisplay(2,message);
+                pump[actpump->ID].protection_level_on=water_level;
+                pump[actpump->ID].fill_time=now_pump()-pump[actpump->ID].pump_protection_started_at;
+   }           
+  }
+}
 }
 
 
