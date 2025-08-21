@@ -539,7 +539,7 @@ void Chek_pump_current_and_flow_rate_task(void *pvParameters)
   ESP_LOGI("DEBUG_TASK", "irms:%lf limit:%f",irms,actpump->max_current);
   if (irms>actpump->max_current) switch_pump_id_to_state(actpump->ID,P_OVER_CURRENT);
   if ((run_cnt%5==0) && (get_pump_id_state(actpump->ID)==P_ON) && (!check_flowrate(actpump->ID,2*xFrequency*portTICK_PERIOD_MS))) 
-   ESP_LOGI("DEBUG_TASK","run_cnt:%d",run_cnt); //switch_pump_id_to_state(actpump->ID,P_FLOW_PROT);
+   ESP_LOGI("DEBUG_TASK","run_cnt:%ld",run_cnt); //switch_pump_id_to_state(actpump->ID,P_FLOW_PROT);
   if (get_pump_id_state(actpump->ID)==P_DELAY) 
   {
    if((now_pump()-pump[actpump->ID].pump_protection_started_at)/60>=pump[actpump->ID].pump_restart_delay)
