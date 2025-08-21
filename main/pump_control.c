@@ -531,7 +531,7 @@ void Chek_pump_current_and_flow_rate_task(void *pvParameters)
  for(long run_cnt=1;;run_cnt++)
  {
   vTaskDelayUntil( &xLastWakeTime, xFrequency );
-  ESP_LOGI("DEBUG_TASK", "Chek_pump_current_and_flow_rate_task for pumpID:%d",actpump->ID);
+  //ESP_LOGI("DEBUG_TASK", "Chek_pump_current_and_flow_rate_task for pumpID:%d",actpump->ID);
   xSemaphoreTake(I2C_mutex, portMAX_DELAY);
   double irms= MeasuredValue(ACS71020_address_default, 0x20, 0x7fff0000, 0,16,14,30.0);
   //double p=    MeasuredValue(ACS71020_address_default, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs);
@@ -539,7 +539,7 @@ void Chek_pump_current_and_flow_rate_task(void *pvParameters)
   ESP_LOGI("DEBUG_TASK", "irms:%lf limit:%f",irms,actpump->max_current);
   if (irms>actpump->max_current) switch_pump_id_to_state(actpump->ID,P_OVER_CURRENT);
   if ((run_cnt%5==0) && (get_pump_id_state(actpump->ID)==P_ON) && (!check_flowrate(actpump->ID,2*xFrequency*portTICK_PERIOD_MS))) 
-   ; //switch_pump_id_to_state(actpump->ID,P_FLOW_PROT);
+   ESP_LOGI("DEBUG_TASK","run_cnt:%d",run_cnt); //switch_pump_id_to_state(actpump->ID,P_FLOW_PROT);
   if (get_pump_id_state(actpump->ID)==P_DELAY) 
   {
    if((now_pump()-pump[actpump->ID].pump_protection_started_at)/60>=pump[actpump->ID].pump_restart_delay)
