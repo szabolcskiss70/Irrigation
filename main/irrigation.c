@@ -3742,7 +3742,7 @@ Save_data_to_NVS();*/
 	mqtt_ble_mutex = xSemaphoreCreateMutex();
 	MAIN_TASK_mutex = xSemaphoreCreateMutex();
 
-    vTaskDelay(10*1000 / portTICK_PERIOD_MS);
+    //vTaskDelay(10*1000 / portTICK_PERIOD_MS);
     if (run_mode & (1<<USE_BLE)) init_BLE();
 
 	Load_data_from_NVS();
