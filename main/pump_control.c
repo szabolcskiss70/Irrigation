@@ -362,7 +362,10 @@ bool check_flowrate(int pump_id,int looptime_ms)
 	ESP_ERROR_CHECK(pcnt_unit_get_count(pump[pump_id].pcnt_unit, &actCNT));
   delta_cnt=actCNT-lastCNT;
   lastCNT=actCNT;
-	return (delta_cnt>pump[pump_id].flow_rate_protection_limit_dl_per_min/10*YF_DN32_PULSE_PER_LITER/60*looptime_ms/1000);
+  
+  int limit=pump[pump_id].flow_rate_protection_limit_dl_per_min/10*YF_DN32_PULSE_PER_LITER/60*looptime_ms/1000;
+	ESP_LOGI("DEBUG_TASK", "delta_cnt:%d limit:%d, looptime:%dms",delta_cnt,limit,looptime_ms);
+  return (delta_cnt>limit);
 }
 
 
@@ -508,12 +511,12 @@ static void level_switch_monitoring_task(void* pvParameters)
   T_pump *actpump= (T_pump *)pvParameters;
   uint32_t io_num;
     for (;;) {
-        if (xQueueReceive(gpio_evt_queue, &io_num, 200)==pdPASS) 
+        if (xQueueReceive(gpio_evt_queue, &io_num, portMAX_DELAY)==pdPASS) 
         {
-          printf("GPIO[%"PRIu32"] intr, val: %d\n", io_num, gpio_get_level(io_num)); 
+          ESP_LOGI("DEBUG_TASK", "GPIO[%"PRIu32"] intr, val: %d,pumpID:%d\n", io_num, gpio_get_level(io_num),actpump->ID);
           check_pump_protection_GPIB_input(actpump->ID);
         }
-        else ESP_LOGI("DEBUG_TASK", "level_switch_monitoring_task is waiting");
+        //else ESP_LOGI("DEBUG_TASK", "level_switch_monitoring_task is waiting");
     }
 }
 
@@ -521,7 +524,7 @@ static void level_switch_monitoring_task(void* pvParameters)
 void Chek_pump_current_and_flow_rate_task(void *pvParameters)
 {
  T_pump *actpump= (T_pump *)pvParameters;
-ESP_LOGI("DEBUG_TASK", "Chek_pump_current_and_flow_rate_task for pumpID:%d",actpump->ID);
+ //ESP_LOGI("DEBUG_TASK", "Chek_pump_current_and_flow_rate_task for pumpID:%d",actpump->ID);
  TickType_t xLastWakeTime;
  const TickType_t xFrequency = 1000 / portTICK_PERIOD_MS; 
  xLastWakeTime = xTaskGetTickCount();
@@ -533,8 +536,10 @@ ESP_LOGI("DEBUG_TASK", "Chek_pump_current_and_flow_rate_task for pumpID:%d",actp
   double irms= MeasuredValue(ACS71020_address_default, 0x20, 0x7fff0000, 0,16,14,30.0);
   //double p=    MeasuredValue(ACS71020_address_default, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs);
   xSemaphoreGive(I2C_mutex);
+  ESP_LOGI("DEBUG_TASK", "irms:%lf limit:%f",irms,actpump->max_current);
   if (irms>actpump->max_current) switch_pump_id_to_state(actpump->ID,P_OVER_CURRENT);
-  if ((run_cnt%5==0) && (get_pump_id_state(actpump->ID)==P_ON) && (!check_flowrate(actpump->ID,2*xFrequency*portTICK_PERIOD_MS))) switch_pump_id_to_state(actpump->ID,P_FLOW_PROT);
+  if ((run_cnt%5==0) && (get_pump_id_state(actpump->ID)==P_ON) && (!check_flowrate(actpump->ID,2*xFrequency*portTICK_PERIOD_MS))) 
+   ; //switch_pump_id_to_state(actpump->ID,P_FLOW_PROT);
   if (get_pump_id_state(actpump->ID)==P_DELAY) 
   {
    if((now_pump()-pump[actpump->ID].pump_protection_started_at)/60>=pump[actpump->ID].pump_restart_delay)

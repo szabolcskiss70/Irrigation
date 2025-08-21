@@ -162,8 +162,17 @@ char* str_states[NOREQUEST-STARTED+1]={"STARTED","RESUMED","INIT","ENABLED","DIS
 char* str_short_states[NOREQUEST-STARTED+1]={"START","RES","INIT","ENAB","DIS","SUSP","DELAY","FIN","END","IDLE","REBO","NO_REQ"};
 typedef enum {OFF,LEVEL,POWER,CT,STACK,LOG,VOLUME,DEBUG} T_measure_mode;
 typedef enum {USE_BLE,USE_WIFI,USE_ACS71020,MAIN_TASK,HANDLE_SCHEDULED,MOTOR_CURRENT_PROT,TEMPSENSOR,CURRENTSENSOR,MEASURE_LEVEL,MEASURE_POWER,POWERMETER_TASK,USE_LORA} T_run_mode_bits;
-int run_mode=(1<<USE_BLE) | (1<<USE_WIFI);
+//int PARAM_VALUES[pRUN_MODE] =(1<<USE_BLE) | (1<<USE_WIFI);
 bool USE_MCP=false;
+
+typedef enum {pRUN_MODE,pPUMP_NUM,pCHANNEL_NUM} T_PARAMS;
+char * PARAM_NAMES[pCHANNEL_NUM-pRUN_MODE+1]={"RUN_MODE","PUMP_NUM","CHANNEL_NUM"};
+int  PARAM_VALUES[pCHANNEL_NUM-pRUN_MODE+1]={3,1,3};
+int PARAM_LL[pCHANNEL_NUM-pRUN_MODE+1]={3,0,0};
+int PARAM_UL[pCHANNEL_NUM-pRUN_MODE+1]={(1<<(USE_LORA+1))-1,2,3};
+
+
+//PARAM_VALUES[pCHANNEL_NUM] 
 
 
 
@@ -336,8 +345,6 @@ typedef struct{
 
 #define MAX_CHANNEL_NUM 3
 #define MAX_PUMP_NUM 2
-int channel_number=3;
-int pump_number=1;
 #define PERIODS 10
 typedef struct{
 	char Name[8]; //Name of the channel
@@ -1119,7 +1126,7 @@ bool PUMP_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 
 bool TO_SLAVE_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 {
-	if (run_mode & (1<<USE_LORA))
+	if (PARAM_VALUES[pRUN_MODE]  & (1<<USE_LORA))
 	{
 	 MQTT_BLE_answer[0]=0;	
  	 sprintf((char*)lora_transmit_buf,"IRRMOSI_%lu_%s",xTaskGetTickCount(),ldata); 
@@ -1460,49 +1467,25 @@ bool temp___CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 bool param_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])			
 			{
 				int intval;
-				 if(sscanf(ldata,"RUN_MODE:%d",&intval)==1) 
-				 {
-					 if ((intval>=0) && (intval<(1<<(USE_LORA+1)))) 
+                  for (int i=pRUN_MODE;i<=pCHANNEL_NUM;i++)
+				  {
+					char Variable_name_and_format[32];
+					sprintf(Variable_name_and_format,"%s:%%d",PARAM_NAMES[i]);
+                    if(sscanf(ldata,Variable_name_and_format,&intval)==1) 
+					{
+				     if ((intval>=PARAM_LL[i]) && (intval<=PARAM_UL[i])) 
 					 {
-						char msg[16];
-						 run_mode=intval;
+						 PARAM_VALUES[i]=intval;
 						 Save_data_to_NVS();
-				         sprintf(msg,"%d",run_mode);
-			             sprintf(MQTT_BLE_answer,"%s {%d}", "run_mode_value",run_mode); 
-
-						 /*if (run_mode & (1<<MAIN_TASK)) 
-						 {
-						  if (xSemaphoreTake(MAIN_TASK_mutex, 0)==pdFALSE)  xTaskCreatePinnedToCore(&mainTask, "mainTask", 4096, NULL, 5, NULL, 0);
-						 }*/
-					 }
-				 }
-				 else if(sscanf(ldata,"CHANNEL_NUM:%d",&intval)==1) 
-				 {
-					 if ((intval>=0) && (intval<=MAX_CHANNEL_NUM)) 
-					 {
-						char msg[16];
-						 channel_number=intval;
-						 Save_data_to_NVS();
-				         sprintf(msg,"%d",channel_number);
-			             sprintf(MQTT_BLE_answer,"%s {%d}", "channel_number",channel_number); 
-					 }
-				 }
-				 else if(sscanf(ldata,"PUMP_NUM:%d",&intval)==1) 
-				 {
-					 if ((intval>=0) && (intval<=MAX_PUMP_NUM)) 
-					 {
-						char msg[16];
-						 pump_number=intval;
-						 Save_data_to_NVS();
-				         sprintf(msg,"%d",pump_number);
-			             sprintf(MQTT_BLE_answer,"%s {%d}", "channel_number",pump_number); 
-					 }
-				 }
+				         sprintf(MQTT_BLE_answer,"%s {%d}", PARAM_NAMES[i],PARAM_VALUES[i]); 
+					 } 
+					}
+				  }
 			return true;
 			}
 bool run_mode___CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])			
 {
-				sprintf(MQTT_BLE_answer,"run_mode:%d",run_mode);
+				sprintf(MQTT_BLE_answer,"PARAM_VALUES[pRUN_MODE] :%d",PARAM_VALUES[pRUN_MODE] );
 				return true;
 }
 
@@ -1736,7 +1719,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 
 			 if(mqtt_connected)
 			 {		 
-			  sprintf(MQTT_BLE_answer,"%s run_mode=%d",app_desc->version,run_mode);
+			  sprintf(MQTT_BLE_answer,"%s PARAM_VALUES[pRUN_MODE] =%d",app_desc->version,PARAM_VALUES[pRUN_MODE] );
 			  msg_id = my_esp_mqtt_client_publish(mqtt_client, "FIRMWARE/RUNNING_VERSION",MQTT_BLE_answer, 0, 0, 1);   //Qos=1; retain=1
 			  ESP_LOGI(TAG, "publish successful, msg_id=%d", msg_id);
 			  
@@ -2418,7 +2401,7 @@ void mainTask(void *pvParameters){
 
   time(&time_at_start);
   int      TimeToPublish = 600000000; //in uS
-  if (run_mode & (1<<TEMPSENSOR)) ds18b20_init(DS_PIN);
+  if (PARAM_VALUES[pRUN_MODE]  & (1<<TEMPSENSOR)) ds18b20_init(DS_PIN);
   
   xEventGroupWaitBits(s_wifi_event_group, MQTT_CONNECTED_BIT, false, false, 30*1000 / portTICK_PERIOD_MS); 
   
@@ -2433,7 +2416,7 @@ void mainTask(void *pvParameters){
 
  
 
-  while (!(FW_update_available) && strlen(OTA_SOURCE_URL) && ((run_mode & (1<<MAIN_TASK))>0)) {
+  while (!(FW_update_available) && strlen(OTA_SOURCE_URL) && ((PARAM_VALUES[pRUN_MODE]  & (1<<MAIN_TASK))>0)) {
 	if(measure_mode==STACK)
 	  { char message[64];
 	    int unused_stack=  uxTaskGetStackHighWaterMark(NULL); 
@@ -2540,7 +2523,7 @@ void mainTask(void *pvParameters){
 	}
 
 	
-    if (run_mode & (1<<TEMPSENSOR)) temperature=ds18b20_get_temp();
+    if (PARAM_VALUES[pRUN_MODE]  & (1<<TEMPSENSOR)) temperature=ds18b20_get_temp();
    
 	if(SNTP_synchronized)
 	{	
@@ -2598,7 +2581,7 @@ void mainTask(void *pvParameters){
 	
 	time2nextperiodstart=86400;
 	
-	if (run_mode & (1<<HANDLE_SCHEDULED))
+	if (PARAM_VALUES[pRUN_MODE]  & (1<<HANDLE_SCHEDULED))
 	{
 	for(ch=0;ch<MAX_CHANNEL_NUM;ch++)
 	{
@@ -2703,7 +2686,7 @@ void mainTask(void *pvParameters){
 		  
 	}		
 
-if (run_mode & (1<<MEASURE_POWER)) 
+if (PARAM_VALUES[pRUN_MODE]  & (1<<MEASURE_POWER)) 
 {
 char message[128];
 xSemaphoreTake(I2C_mutex, portMAX_DELAY);
@@ -2752,7 +2735,7 @@ xSemaphoreGive(I2C_mutex);
 
 }
 
-if(run_mode & (1<<MEASURE_LEVEL)) //measure water level
+if(PARAM_VALUES[pRUN_MODE]  & (1<<MEASURE_LEVEL)) //measure water level
 {
 	char message[128];
  
@@ -3068,15 +3051,11 @@ void Load_general_data_from_NVS()
 	 long int intval;
     if((ret=nvs_open("my_NVS", NVS_READWRITE, &nvs_handle))!=ESP_OK) ESP_LOGI(TAG, "NVS open failed. %d",ret);
 	
-	if(nvs_get_i32(nvs_handle, "run_mode",&intval)==ESP_OK) run_mode=(int)intval | (1<<USE_BLE) | (1<<USE_WIFI);
-	ESP_LOGI(TAG, "run_mode:%d",run_mode);
-
-	if((nvs_get_i32(nvs_handle, "pump_number",&intval)==ESP_OK) && (intval<=MAX_PUMP_NUM) && (intval>=0)) pump_number=(int)intval;
-	ESP_LOGI(TAG, "pump_number:%d",pump_number);
-
-	if((nvs_get_i32(nvs_handle, "channel_number",&intval)==ESP_OK) && (intval<=MAX_CHANNEL_NUM) && (intval>=0)) channel_number=(int)intval;
-	ESP_LOGI(TAG, "channel_number:%d",channel_number);
-    
+	for (int i=pRUN_MODE;i<=pCHANNEL_NUM;i++)
+	{
+ 	 if(nvs_get_i32(nvs_handle, PARAM_NAMES[i],&intval)==ESP_OK) PARAM_VALUES[i] =(int)intval;
+	 ESP_LOGI(TAG, "%s:%d",PARAM_NAMES[i],PARAM_VALUES[i]);
+	} 
     nvs_close(nvs_handle);
 }
 
@@ -3093,10 +3072,7 @@ void Load_data_from_NVS()
 	 long int intval;
     if((ret=nvs_open("my_NVS", NVS_READWRITE, &nvs_handle))!=ESP_OK) ESP_LOGI(TAG, "NVS open failed. %d",ret);
 	
-	if(nvs_get_i32(nvs_handle, "run_mode",&intval)==ESP_OK) run_mode=(int)intval | (1<<USE_BLE) | (1<<USE_WIFI);
-	ESP_LOGI(TAG, "run_mode:%d",run_mode);
-
-    for (ch=0;ch<pump_number;ch++)
+    for (ch=0;ch<PARAM_VALUES[pPUMP_NUM] ;ch++)
    {
      char keyName[32];
      uint8_t uint8val;
@@ -3118,7 +3094,7 @@ void Load_data_from_NVS()
 
    }
 
-	for (ch=0;ch<channel_number;ch++)
+	for (ch=0;ch<PARAM_VALUES[pCHANNEL_NUM] ;ch++)
     {
 	  char keyName[32];   //CHx_x 
 	  long int keyvalue;
@@ -3171,11 +3147,9 @@ void Save_data_to_NVS()
     if(nvs_open("my_NVS", NVS_READWRITE, &nvs_handle)!=ESP_OK) ESP_LOGI(TAG, "NVS OPEN FAILED");
 		
    // TEST_ESP_OK(nvs_erase_all(nvs_handle));
-   
-	nvs_set_i32(nvs_handle, "run_mode",run_mode);
-	nvs_set_i32(nvs_handle, "pump_number",pump_number);
-	nvs_set_i32(nvs_handle, "channel_number",channel_number);
 
+   for (int i=pRUN_MODE;i<=pCHANNEL_NUM;i++) nvs_set_i32(nvs_handle, PARAM_NAMES[i],PARAM_VALUES[i]);
+   
    for (ch=0;ch<2;ch++)
    {
      char keyName[32];
@@ -3478,7 +3452,7 @@ static int device_write(uint16_t conn_handle, uint16_t attr_handle, struct ble_g
 
     if (sscanf(strdata, "RUN_MODE=%d",&intvalue)==1)
     {
-	   run_mode=intvalue;	
+	   PARAM_VALUES[pRUN_MODE] =intvalue;	
 	  /* if (mqtt_connected) 
 			{
 				esp_mqtt_client_stop(mqtt_client);
@@ -3488,7 +3462,7 @@ static int device_write(uint16_t conn_handle, uint16_t attr_handle, struct ble_g
 	   esp_wifi_disconnect();
 	   Save_data_to_NVS();
 	   esp_restart();  */
-	   sprintf(MQTT_BLE_answer,"run_mode=%d",run_mode);
+	   sprintf(MQTT_BLE_answer,"PARAM_VALUES[pRUN_MODE] =%d",PARAM_VALUES[pRUN_MODE] );
     }
 	else if (strcmp(ltopic,"SSID")==0)
     {
@@ -3679,7 +3653,8 @@ void app_main()
     ESP_LOGI(TAG, "Project name:     %s", app_desc->project_name);
     ESP_LOGI(TAG, "App version:      %s", app_desc->version);
 
-    esp_log_level_set("*", ESP_LOG_VERBOSE);
+    esp_log_level_set("*", ESP_LOG_ERROR);
+	esp_log_level_set("DEBUG_TASK", ESP_LOG_VERBOSE);
     /*esp_log_level_set("MQTT_CLIENT", ESP_LOG_VERBOSE);
     esp_log_level_set("TRANSPORT_TCP", ESP_LOG_VERBOSE);
     esp_log_level_set("TRANSPORT_SSL", ESP_LOG_VERBOSE);
@@ -3713,13 +3688,13 @@ void app_main()
 
     Load_general_data_from_NVS();   
 /*
-pump_number=1;
-channel_number=0;
-run_mode=7;
+PARAM_VALUES[pPUMP_NUM] =1;
+PARAM_VALUES[pCHANNEL_NUM] =0;
+PARAM_VALUES[pRUN_MODE] =7;
 Save_data_to_NVS();*/
 
 
-	switch (pump_number)
+	switch (PARAM_VALUES[pPUMP_NUM] )
 	{
 	  case 2: init_pump(1,1000+GPIO_OUTPUT_PUMP_1,-1,-1,false,false); 
 	  case 1: init_pump(0,GPIO_OUTPUT_PUMP_1,ISOLATED_INPUT_PUMP_1,ISOLATED_INPUT_2,true,true); 
@@ -3728,7 +3703,7 @@ Save_data_to_NVS();*/
 
 	}
 
-	switch (channel_number)
+	switch (PARAM_VALUES[pCHANNEL_NUM] )
 	{
       case 3: init_channel(2,"CH2",GPIO_OUTPUT_OUT_4,true);
 	  case 2: init_channel(1,"CH1",GPIO_OUTPUT_OUT_3,false);
@@ -3743,7 +3718,7 @@ Save_data_to_NVS();*/
 	MAIN_TASK_mutex = xSemaphoreCreateMutex();
 
     //vTaskDelay(10*1000 / portTICK_PERIOD_MS);
-    if (run_mode & (1<<USE_BLE)) init_BLE();
+    if (PARAM_VALUES[pRUN_MODE]  & (1<<USE_BLE)) init_BLE();
 
 	Load_data_from_NVS();
 
@@ -3790,9 +3765,9 @@ Save_data_to_NVS();*/
 
 
 	if (USE_MCP) Init_DIO(Display._i2c_bus_handle);
-    if(readDI(PRG_BUTTON)==0) {run_mode=(1<<USE_BLE);Save_data_to_NVS();esp_restart();}
+    if(readDI(PRG_BUTTON)==0) {PARAM_VALUES[pRUN_MODE] =(1<<USE_BLE);Save_data_to_NVS();esp_restart();}
 
-	if (run_mode & (1<<USE_ACS71020))  init_ACS71020(Display._i2c_bus_handle,ACS71020_address_default);
+	if (PARAM_VALUES[pRUN_MODE]  & (1<<USE_ACS71020))  init_ACS71020(Display._i2c_bus_handle,ACS71020_address_default);
 
 
 	   //Check if Two Point or Vref are burned into eFuse
@@ -3836,10 +3811,10 @@ Save_data_to_NVS();*/
 
 
 
-    if (run_mode & (1<<USE_LORA)) init_lora();
+    if (PARAM_VALUES[pRUN_MODE]  & (1<<USE_LORA)) init_lora();
 	
 
-    if (run_mode & (1<<USE_WIFI)) initialise_wifi();
+    if (PARAM_VALUES[pRUN_MODE]  & (1<<USE_WIFI)) initialise_wifi();
 
 	if (getfilesize(LOG_FILE)>1E6) remove(LOG_FILE);
 	if (getfilesize(IRR_FILE)>0.5E6) remove(IRR_FILE);
@@ -3852,17 +3827,17 @@ Save_data_to_NVS();*/
 
 
 
-    if (run_mode & (1<<MAIN_TASK))          xTaskCreatePinnedToCore(&mainTask, "mainTask", 4096, NULL, 5, NULL, 0);
-    if (run_mode & (1<<POWERMETER_TASK))	xTaskCreatePinnedToCore(&PowerMeterTask, "PowerMeterTask", 4096, NULL, 5, NULL, 0);
+    if (PARAM_VALUES[pRUN_MODE]  & (1<<MAIN_TASK))          xTaskCreatePinnedToCore(&mainTask, "mainTask", 4096, NULL, 5, NULL, 0);
+    if (PARAM_VALUES[pRUN_MODE]  & (1<<POWERMETER_TASK))	xTaskCreatePinnedToCore(&PowerMeterTask, "PowerMeterTask", 4096, NULL, 5, NULL, 0);
 	
 
 
 
-    if (run_mode & (1<<USE_WIFI)) xEventGroupWaitBits(s_wifi_event_group, MQTT_CONNECTED_BIT, false, false, 120*1000 / portTICK_PERIOD_MS); 
+    if (PARAM_VALUES[pRUN_MODE]  & (1<<USE_WIFI)) xEventGroupWaitBits(s_wifi_event_group, MQTT_CONNECTED_BIT, false, false, 120*1000 / portTICK_PERIOD_MS); 
 	testValveSwitching();
 
-	 append_log(LOG_FILE,"Rebooted. run_mode=%d\n",run_mode); 
-	//append_log(IRR_FILE,"append test. run_mode=%d\n",run_mode); 
+	 append_log(LOG_FILE,"Rebooted. PARAM_VALUES[pRUN_MODE] =%d\n",PARAM_VALUES[pRUN_MODE] ); 
+	//append_log(IRR_FILE,"append test. PARAM_VALUES[pRUN_MODE] =%d\n",PARAM_VALUES[pRUN_MODE] ); 
     //read_log(IRR_FILE);
 
 
