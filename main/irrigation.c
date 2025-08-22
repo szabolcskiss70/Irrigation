@@ -1196,6 +1196,38 @@ bool PUMP_PARAM_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][
 				 }
 				 else sprintf(MQTT_BLE_answer,"%s %s", "MAX_CURRENT","invalid format!"); 
 		}	
+		else if (strcmp(wilcarded_topic[0],"T_TRIP")==0)
+		{
+				int intval;
+				 if(sscanf(ldata,"%d",&intval)==1) 
+				 {
+					 if ((intval>=0) && (intval<=200)) 
+					 {
+						 set_T_trip(ch,intval);   
+						 sprintf(MQTT_BLE_answer,"T_TRIP pump%d: %dC°",ch,intval); 
+					 }
+					 else sprintf(MQTT_BLE_answer,"%s %s", "T_TRIP","Out of range"); 
+				 }
+				 else sprintf(MQTT_BLE_answer,"%s %s", "T_TRIP","invalid format!"); 
+		}	
+				else if (strcmp(wilcarded_topic[0],"T_RESET")==0)
+		{
+				int intval;
+				 if(sscanf(ldata,"%d",&intval)==1) 
+				 {
+					 if ((intval>=0) && (intval<=200)) 
+					 {
+						 set_T_reset(ch,intval);   
+						 sprintf(MQTT_BLE_answer,"T_RESET pump%d: %dC°",ch,intval); 
+					 }
+					 else sprintf(MQTT_BLE_answer,"%s %s", "T_RESET","Out of range"); 
+				 }
+				 else sprintf(MQTT_BLE_answer,"%s %s", "T_RESET","invalid format!"); 
+		}
+
+
+
+
 		else 
 		{
 			sprintf(MQTT_BLE_answer,"%s %s", "Invalid parameter",wilcarded_topic[0]);
@@ -3692,7 +3724,21 @@ PARAM_VALUES[pPUMP_NUM] =1;
 PARAM_VALUES[pCHANNEL_NUM] =0;
 PARAM_VALUES[pRUN_MODE] =7;
 Save_data_to_NVS();*/
+/*
+    T_pump testP1;
+	pump[0].ID=0;
+	pump[1].ID=1;
+    testP1.ID=3;
+	int sizeT_pump=sizeof(T_pump);
+    memcpy(&pump[1],&testP1,sizeT_pump);
+    ESP_LOGE("ID0","%d",pump[0].ID);
+	ESP_LOGE("ID1","%d",pump[1].ID);
+	ESP_LOGE("ID2","%d",testP1.ID);*/
 
+
+
+  int limit=1200/10*YF_DN32_PULSE_PER_LITER/60*2000/1000;
+  ESP_LOGI("TEST","%d",limit);
 
 	switch (PARAM_VALUES[pPUMP_NUM] )
 	{
@@ -3702,6 +3748,8 @@ Save_data_to_NVS();*/
 	  default: break;
 
 	}
+
+
 
 	switch (PARAM_VALUES[pCHANNEL_NUM] )
 	{

@@ -21,6 +21,8 @@ typedef struct{
 	bool prio; //priority of pump
 	bool switchbackifavailable; // cwitch back to prio pump if possible
 	float max_current;
+	float T_trip;
+	float T_reset;
 	T_pump_states status; //actual pump status
 	int GPIO_PUMP; //GPIO of pump relay
 	int GPIO_PROT; //gpio of protection imput
@@ -74,5 +76,9 @@ float getsinkvolume(int id);
 float get_max_current(int id);
 void  set_max_current(int id, float imax);
 void  set_flow_rate_protection_limit_dl_per_min(int id, int flow_min_dlper_min);
+float get_T_trip(int id);
+void  set_T_trip(int id, float T_trip);
+float get_T_reset(int id);
+void  set_T_reset(int id, float T_reset);
 
 #endif

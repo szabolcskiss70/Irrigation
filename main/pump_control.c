@@ -15,6 +15,7 @@ void install_pcnt();
 void Chek_pump_current_and_flow_rate_task(void *pvParameters);
 static void level_switch_monitoring_task(void* pvParameters);
 static void pump_switching_task(void* pvParameters);
+extern bool motor_protect_func(float I,float T_trip,float T_reset,int looptime_ms);
 #define EXAMPLE_PCNT_HIGH_LIMIT 32767
 #define EXAMPLE_PCNT_LOW_LIMIT -1
 
@@ -138,6 +139,8 @@ void init_pump(int id, int GPIO_PUMP, int GPIO_PROT,int GPIO_CNT,bool prio, bool
 	pump[id].GPIO_PROT=GPIO_PROT;
 	pump[id].GPIO_CNT=GPIO_CNT;
   pump[id].max_current=5.0; 
+  pump[id].T_trip=150.0; 
+  pump[id].T_reset=80.0; 
     pump[id].sink_time=0;
     pump[id].fill_time=0;	
 	pump[id].last_pump_on_time=0;
@@ -448,6 +451,15 @@ float getsinkvolume(int id) {return pump[id].sink_volume;}
 float get_max_current(int id) {return pump[id].max_current;}
 void  set_max_current(int id, float imax) {pump[id].max_current=imax;}
 
+float get_T_trip(int id) {return pump[id].T_trip;}
+void  set_T_trip(int id, float T_trip) {pump[id].T_trip=T_trip;}
+
+float get_T_reset(int id) {return pump[id].T_reset;}
+void  set_T_reset(int id, float T_reset) {pump[id].T_reset=T_reset;}
+
+
+
+
 void  set_flow_rate_protection_limit_dl_per_min(int id, int flow_min_dlper_min) {pump[id].flow_rate_protection_limit_dl_per_min=flow_min_dlper_min;}
 
 
@@ -537,8 +549,8 @@ void Chek_pump_current_and_flow_rate_task(void *pvParameters)
   //double p=    MeasuredValue(ACS71020_address_default, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs);
   xSemaphoreGive(I2C_mutex);
   ESP_LOGI("DEBUG_TASK", "irms:%lf limit:%f",irms,actpump->max_current);
-  if (irms>actpump->max_current) switch_pump_id_to_state(actpump->ID,P_OVER_CURRENT);
-  if ((run_cnt%5==0) && (get_pump_id_state(actpump->ID)==P_ON) && (!check_flowrate(actpump->ID,2*xFrequency*portTICK_PERIOD_MS))) 
+  if (!motor_protect_func(irms,actpump->T_trip,actpump->T_reset,xFrequency*portTICK_PERIOD_MS)) switch_pump_id_to_state(actpump->ID,P_OVER_CURRENT);
+  if (/*(run_cnt%5==0) &&*/ (get_pump_id_state(actpump->ID)==P_ON) && (!check_flowrate(actpump->ID,xFrequency*portTICK_PERIOD_MS))) 
    ESP_LOGI("DEBUG_TASK","run_cnt:%ld",run_cnt); //switch_pump_id_to_state(actpump->ID,P_FLOW_PROT);
   if (get_pump_id_state(actpump->ID)==P_DELAY) 
   {
