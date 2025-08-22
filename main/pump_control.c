@@ -548,7 +548,7 @@ void Chek_pump_current_and_flow_rate_task(void *pvParameters)
   double irms= MeasuredValue(ACS71020_address_default, 0x20, 0x7fff0000, 0,16,14,30.0);
   //double p=    MeasuredValue(ACS71020_address_default, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs);
   xSemaphoreGive(I2C_mutex);
-  ESP_LOGI("DEBUG_TASK", "irms:%lf limit:%f",irms,actpump->max_current);
+  //ESP_LOGI("DEBUG_TASK", "irms:%lf limit:%f",irms,actpump->max_current);
   if (!motor_protect_func(irms,actpump->T_trip,actpump->T_reset,xFrequency*portTICK_PERIOD_MS,get_pump_id_state(actpump->ID)==P_ON)) switch_pump_id_to_state(actpump->ID,PROT_T_TRIP);
   else if(get_pump_id_state(actpump->ID)==PROT_T_TRIP) switch_pump_id_to_state(actpump->ID,PROT_T_RESET);
   if (/*(run_cnt%5==0) &&*/ (get_pump_id_state(actpump->ID)==P_ON) && (!check_flowrate(actpump->ID,xFrequency*portTICK_PERIOD_MS))) 
