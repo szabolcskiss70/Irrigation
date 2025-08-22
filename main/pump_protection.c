@@ -15,11 +15,11 @@ static const float C_th     = 47.09f;    // J/K, termikus kapacitás
 
 // Szimulált állapotváltozók
 static float deltaT = 0.0f;  // °C, relatív melegedés
-static bool motor_on = true;
+static bool motor_prot_on = true;
 
 
 // Bimetál szimulációs task
-bool motor_protect_func(float I,float T_trip,float T_reset,int looptime_ms) {
+bool motor_protect_func(float I,float T_trip,float T_reset,int looptime_ms,bool pumpstatus) {
     const float dt = looptime_ms/1000; // másodperc, diszkrét időlépés
 
         // Differenciaegyenlet diszkrét alakja
@@ -27,12 +27,12 @@ bool motor_protect_func(float I,float T_trip,float T_reset,int looptime_ms) {
         deltaT += dT;
 
         // Védelem logika
-        if (motor_on && deltaT >= T_trip) {
-            motor_on = false;
-        } else if (!motor_on && deltaT <= T_reset) {
-            motor_on = true;
+        if (motor_prot_on && deltaT >= T_trip) {
+            motor_prot_on = false;
+        } else if (!motor_prot_on && deltaT <= T_reset) {
+            motor_prot_on = true;
         }
 
-        ESP_LOGI("DEBUG_TASK", "I=%.2f A, ΔT=%.1f °C, motor=%d, T_trip:%f, T_reset:%f", I, deltaT, motor_on,T_trip,T_reset);
-        return (motor_on);
+        if (pumpstatus) ESP_LOGI("DEBUG_TASK", "I=%.2f A, ΔT=%.1f °C, motor=%d, T_trip:%f, T_reset:%f", I, deltaT, motor_prot_on,T_trip,T_reset);
+        return (motor_prot_on);
     }

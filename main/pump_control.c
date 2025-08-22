@@ -15,12 +15,12 @@ void install_pcnt();
 void Chek_pump_current_and_flow_rate_task(void *pvParameters);
 static void level_switch_monitoring_task(void* pvParameters);
 static void pump_switching_task(void* pvParameters);
-extern bool motor_protect_func(float I,float T_trip,float T_reset,int looptime_ms);
+extern bool motor_protect_func(float I,float T_trip,float T_reset,int looptime_ms,bool pumpstatus);
 #define EXAMPLE_PCNT_HIGH_LIMIT 32767
 #define EXAMPLE_PCNT_LOW_LIMIT -1
 
 T_pump pump[2];
-char* PUMP_status_str[]={"OVER_CURRENT","FLOW_PROT","DISABLED","SUSPENDED","DELAY","OFF","RESUMED","ON"};
+char* PUMP_status_str[]={"PROT_T_TRIP","PROT_T_RESET","FLOW_PROT","DISABLED","SUSPENDED","DELAY","OFF","RESUMED","ON"};
 
 static const char *TAG = "pump";
 int pump_num=0;
@@ -549,7 +549,8 @@ void Chek_pump_current_and_flow_rate_task(void *pvParameters)
   //double p=    MeasuredValue(ACS71020_address_default, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs);
   xSemaphoreGive(I2C_mutex);
   ESP_LOGI("DEBUG_TASK", "irms:%lf limit:%f",irms,actpump->max_current);
-  if (!motor_protect_func(irms,actpump->T_trip,actpump->T_reset,xFrequency*portTICK_PERIOD_MS)) switch_pump_id_to_state(actpump->ID,P_OVER_CURRENT);
+  if (!motor_protect_func(irms,actpump->T_trip,actpump->T_reset,xFrequency*portTICK_PERIOD_MS,get_pump_id_state(actpump->ID)==P_ON)) switch_pump_id_to_state(actpump->ID,PROT_T_TRIP);
+  else if(get_pump_id_state(actpump->ID)==PROT_T_TRIP) switch_pump_id_to_state(actpump->ID,PROT_T_RESET);
   if (/*(run_cnt%5==0) &&*/ (get_pump_id_state(actpump->ID)==P_ON) && (!check_flowrate(actpump->ID,xFrequency*portTICK_PERIOD_MS))) 
    ESP_LOGI("DEBUG_TASK","run_cnt:%ld",run_cnt); //switch_pump_id_to_state(actpump->ID,P_FLOW_PROT);
   if (get_pump_id_state(actpump->ID)==P_DELAY) 
