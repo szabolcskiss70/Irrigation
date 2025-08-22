@@ -149,7 +149,7 @@ typedef bool T_MQTT_Sub_Callback(char* ltopic, char* ldata, bool MQTT,char wilca
 
 
 #define BROKER_URL "mqtt://szabolcskiss.ddns.net:1883"
-char *maintopic="IRRIGATION";
+char maintopic[16]="IRRIGATIONx";
 
 
 const esp_app_desc_t *app_desc;
@@ -1499,6 +1499,12 @@ bool temp___CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 bool param_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])			
 			{
 				int intval;
+				  if(sscanf(ldata,"maintopic:%s",maintopic)==1) 
+				  {	 
+					Save_data_to_NVS();
+				    sprintf(MQTT_BLE_answer,"%s {%s}", "maintopic",maintopic); 
+				  }
+				  else
                   for (int i=pRUN_MODE;i<=pCHANNEL_NUM;i++)
 				  {
 					char Variable_name_and_format[32];
@@ -2388,13 +2394,14 @@ void read_ACS71020_register2(int reg_addr,long value)
 
 void testValveSwitching()
 {
+ if (PARAM_VALUES[pCHANNEL_NUM]==0) return;	
  char message[128]="";	
  xSemaphoreTake(I2C_mutex, portMAX_DELAY);
   init_ACS71020(Display._i2c_bus_handle,ACS71020_address_default);
   double p_standby=    MeasuredValue(ACS71020_address_default, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs);
  xSemaphoreGive(I2C_mutex); 
  double p_valve;
- for(int ch=0;ch<MAX_CHANNEL_NUM;ch++)
+ for(int ch=0;ch<PARAM_VALUES[pCHANNEL_NUM];ch++)
  {
    writeDO(channels[ch].Valve_GPIO_OUTPUT, true);
    vTaskDelay(3*1000 / portTICK_PERIOD_MS);
@@ -3081,8 +3088,9 @@ void Load_general_data_from_NVS()
 	 size_t buf_len;
 	 int ret;
 	 long int intval;
+	 size_t length=sizeof(maintopic);
     if((ret=nvs_open("my_NVS", NVS_READWRITE, &nvs_handle))!=ESP_OK) ESP_LOGI(TAG, "NVS open failed. %d",ret);
-	
+	nvs_get_str(nvs_handle, "maintopic", maintopic,&length);
 	for (int i=pRUN_MODE;i<=pCHANNEL_NUM;i++)
 	{
  	 if(nvs_get_i32(nvs_handle, PARAM_NAMES[i],&intval)==ESP_OK) PARAM_VALUES[i] =(int)intval;
@@ -3179,7 +3187,7 @@ void Save_data_to_NVS()
     if(nvs_open("my_NVS", NVS_READWRITE, &nvs_handle)!=ESP_OK) ESP_LOGI(TAG, "NVS OPEN FAILED");
 		
    // TEST_ESP_OK(nvs_erase_all(nvs_handle));
-
+   nvs_set_str(nvs_handle, "maintopic", maintopic);
    for (int i=pRUN_MODE;i<=pCHANNEL_NUM;i++) nvs_set_i32(nvs_handle, PARAM_NAMES[i],PARAM_VALUES[i]);
    
    for (ch=0;ch<2;ch++)
@@ -3737,8 +3745,8 @@ Save_data_to_NVS();*/
 
 
 
-  int limit=1200/10*YF_DN32_PULSE_PER_LITER/60*2000/1000;
-  ESP_LOGI("TEST","%d",limit);
+  //int limit=1200/10*YF_DN32_PULSE_PER_LITER/60*2000/1000;
+  //ESP_LOGI("TEST","%d",limit);
 
 	switch (PARAM_VALUES[pPUMP_NUM] )
 	{

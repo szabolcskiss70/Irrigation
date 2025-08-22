@@ -6,6 +6,7 @@
 #include "esp_log.h"
 #include "ctype.h"
 #include "mqtt_client.h"
+#include "pump_control.h"
 
 static const char *TAG = "LORA";
 uint8_t lora_transmit_buf[256];
@@ -15,8 +16,9 @@ int INT_result;
 extern  int my_esp_mqtt_client_publish(esp_mqtt_client_handle_t client, char* subtopic,const char* message,int par1, int par2, int par3);
 extern esp_mqtt_client_handle_t mqtt_client;
 extern bool Process_EVENT_DATA(char* ltopic, char* ldata, bool MQTT);
-typedef enum {P_OVER_CURRENT,P_FLOW_PROT,P_DISABLED, P_SUSPENDED,P_DELAY,P_OFF,P_RESUMED,P_ON} T_pump_states;
+//typedef enum {P_OVER_CURRENT,P_FLOW_PROT,P_DISABLED, P_SUSPENDED,P_DELAY,P_OFF,P_RESUMED,P_ON} T_pump_states;
 extern T_pump_states get_pump_id_state(int id);
+extern char MQTT_BLE_answer[2048];
 
 
 
@@ -85,7 +87,7 @@ void task_rx(void *p)
 			{
 			 to_upper(ltopic,ltopic);
 			 Process_EVENT_DATA(ltopic,ltopic,false);
-			 sprintf((char*)lora_transmit_buf,"IRRMISO_%.240s DONE",lora_receive_buf+7); 
+			 sprintf((char*)lora_transmit_buf,"IRRMISO_%.240s DONE",MQTT_BLE_answer); 
 			 lora_send_packet(lora_transmit_buf,strlen((char*)lora_transmit_buf)); 
 			}
 			if (sscanf((char*)lora_receive_buf,"IRRMISO_%lu_%[^=]=%[^\n]",&tick,ltopic,ldata)==3)
@@ -99,10 +101,22 @@ void task_rx(void *p)
 			  sprintf((char*)lora_transmit_buf,"IRRSRETI_%lu_%d",tick,get_pump_id_state(0)); 
 			  lora_send_packet(lora_transmit_buf,strlen((char*)lora_transmit_buf)); 
 			 }
+			 else if (strcmp(ldata,"get_pump_id_struct")==0)
+			 {
+			  int sizeT_pump=sizeof(T_pump);
+			  sprintf((char*)lora_transmit_buf,"IRRSRETB_%lu_",tick);
+			  int header_length=strlen((char*)lora_transmit_buf);
+			  memcpy(lora_transmit_buf+header_length,&pump[0],sizeT_pump);
+			  lora_send_packet(lora_transmit_buf,header_length+sizeT_pump); 
+			 }
 			}
 			else if (sscanf((char*)lora_receive_buf,"IRRSRETI_%lu_%d",&tick,&intval)==2)
 			{
 			 INT_result=intval; 
+			}
+			 else if (sscanf((char*)lora_receive_buf,"IRRSRETB_%lu_",&tick)==1)
+			{
+				memcpy(&pump[1],lora_receive_buf+x-sizeof(T_pump),sizeof(T_pump));	 
 			}
 
 		

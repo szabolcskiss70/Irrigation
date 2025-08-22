@@ -46,7 +46,7 @@ typedef struct{
 	int flow_rate_protection_limit_dl_per_min;
 } T_pump; 
 
-//extern T_pump pump[2];
+extern T_pump pump[2];
 extern int pump_num;
 
 void switch_pump(bool on_state, T_pump_list assigned_pump);
