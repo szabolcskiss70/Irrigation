@@ -42,7 +42,7 @@ void init_lora()
 		//lora_enable_crc();
 
         //lora_dump_registers();
-		xTaskCreate(&task_rx, "task_rx", 2048, NULL, 5, NULL);
+		xTaskCreate(&task_rx, "task_rx", 4096, NULL, 5, NULL);
 
       if(false)
 	  {
