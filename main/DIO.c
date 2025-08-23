@@ -72,9 +72,10 @@ void set_DIO_direction(int portbit,gpio_mode_t mode)
 
 void set_DIO_interrupt(int portbit,gpio_mode_t mode, gpio_int_type_t intr_type)
 {
+    ESP_LOGI("DEBUG","set_DIO_interrupt:%d,%d,%d",portbit,mode,intr_type);
     gpio_config_t io_conf;
     io_conf.intr_type = intr_type;
-    io_conf.pin_bit_mask = (1<<portbit);
+    io_conf.pin_bit_mask = (1ULL<<portbit);
     io_conf.mode = mode;
     io_conf.pull_up_en = 1;
     gpio_config(&io_conf);

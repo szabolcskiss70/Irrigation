@@ -10,6 +10,7 @@ extern SemaphoreHandle_t I2C_mutex;
 
 extern void Write_Msg_toDisplay(int line, char *Msg);
 extern float water_level;
+extern bool ACS71020_initialized;
 
 void install_pcnt();
 void Chek_pump_current_and_flow_rate_task(void *pvParameters);
@@ -476,8 +477,8 @@ void check_pump_protection_GPIB_input(int id)
               pump[id].pump_protection_started_at=now_pump();
               pump[id].protection_level_off=water_level;
               pump[id].sink_time=now_pump()-pump[id].last_pump_on_time;
-              pcnt_unit_get_count(pump[running_pump_ID].pcnt_unit, &pump[running_pump_ID].cnt_at_pump_suspend);
-              pump[id].sink_volume=convertCNT2Liter(pump[running_pump_ID].cnt_at_pump_suspend-pump[running_pump_ID].cnt_at_pump_start);
+              pcnt_unit_get_count(pump[id].pcnt_unit, &pump[id].cnt_at_pump_suspend);
+              pump[id].sink_volume=convertCNT2Liter(pump[id].cnt_at_pump_suspend-pump[id].cnt_at_pump_start);
               }
               if (running_pump_ID==id) active_pump_suspended=id;
               switch_pump_id_to_state(id,P_SUSPENDED);
@@ -544,13 +545,18 @@ void Chek_pump_current_and_flow_rate_task(void *pvParameters)
  {
   vTaskDelayUntil( &xLastWakeTime, xFrequency );
   //ESP_LOGI("DEBUG_TASK", "Chek_pump_current_and_flow_rate_task for pumpID:%d",actpump->ID);
-  xSemaphoreTake(I2C_mutex, portMAX_DELAY);
-  double irms= MeasuredValue(ACS71020_address_default, 0x20, 0x7fff0000, 0,16,14,30.0);
+  if (ACS71020_initialized)
+  {
+   xSemaphoreTake(I2C_mutex, portMAX_DELAY);
+   double irms= MeasuredValue(ACS71020_address_default, 0x20, 0x7fff0000, 0,16,14,30.0);
   //double p=    MeasuredValue(ACS71020_address_default, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs);
-  xSemaphoreGive(I2C_mutex);
+   xSemaphoreGive(I2C_mutex);
+  
   //ESP_LOGI("DEBUG_TASK", "irms:%lf limit:%f",irms,actpump->max_current);
-  if (!motor_protect_func(irms,actpump->T_trip,actpump->T_reset,xFrequency*portTICK_PERIOD_MS,get_pump_id_state(actpump->ID)==P_ON)) switch_pump_id_to_state(actpump->ID,PROT_T_TRIP);
-  else if(get_pump_id_state(actpump->ID)==PROT_T_TRIP) switch_pump_id_to_state(actpump->ID,PROT_T_RESET);
+   if (!motor_protect_func(irms,actpump->T_trip,actpump->T_reset,xFrequency*portTICK_PERIOD_MS,get_pump_id_state(actpump->ID)==P_ON)) switch_pump_id_to_state(actpump->ID,PROT_T_TRIP);
+   else if(get_pump_id_state(actpump->ID)==PROT_T_TRIP) switch_pump_id_to_state(actpump->ID,PROT_T_RESET);
+  }
+
   if (/*(run_cnt%5==0) &&*/ (get_pump_id_state(actpump->ID)==P_ON) && (!check_flowrate(actpump->ID,xFrequency*portTICK_PERIOD_MS))) 
    ESP_LOGI("DEBUG_TASK","run_cnt:%ld",run_cnt); //switch_pump_id_to_state(actpump->ID,P_FLOW_PROT);
   if (get_pump_id_state(actpump->ID)==P_DELAY) 

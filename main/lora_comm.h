@@ -12,6 +12,9 @@ void task_rx(void *p);
 
 #define LORA_RX_BIT    0x01
 
+int my_lora_packet_rssi();
+void my_lora_send_packet(uint8_t *buf, int size);
+
 
 
 #endif

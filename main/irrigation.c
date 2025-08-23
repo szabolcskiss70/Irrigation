@@ -139,7 +139,7 @@ typedef bool T_MQTT_Sub_Callback(char* ltopic, char* ldata, bool MQTT,char wilca
 
 
 #include "ACS71020.h"
-
+bool ACS71020_initialized=false;
 
 
 
@@ -1123,14 +1123,13 @@ bool PUMP_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 }
 
 
-
 bool TO_SLAVE_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 {
 	if (PARAM_VALUES[pRUN_MODE]  & (1<<USE_LORA))
 	{
 	 MQTT_BLE_answer[0]=0;	
  	 sprintf((char*)lora_transmit_buf,"IRRMOSI_%lu_%s",xTaskGetTickCount(),ldata); 
-	 lora_send_packet(lora_transmit_buf,strlen((char*)lora_transmit_buf)); 
+	 my_lora_send_packet(lora_transmit_buf,strlen((char*)lora_transmit_buf)); 
 	}
 	else sprintf(MQTT_BLE_answer,"%s", "LORA not enabled");
 	return true;
@@ -1588,7 +1587,7 @@ bool LIST_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 	else if (strcmp(ldata,"LORA")==0)
 	{
 		MQTT_BLE_answer[0]=0;
-		sprintf(MQTT_BLE_answer,"rssi:%d, Daa:%s\n",lora_packet_rssi(), lora_receive_buf);
+		sprintf(MQTT_BLE_answer,"rssi:%d, Daa:%s\n",my_lora_packet_rssi(), lora_receive_buf);
 
 	}
 
@@ -2800,10 +2799,10 @@ if(PARAM_VALUES[pRUN_MODE]  & (1<<MEASURE_LEVEL)) //measure water level
 		Write_Msg_toDisplay(2,message);*/
 		
 		ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle, EXAMPLE_ADC1_CHAN0, &adc_raw[0][0]));
-        ESP_LOGI(TAG, "ADC%d Channel[%d] Raw Data: %d", ADC_UNIT_1 + 1, EXAMPLE_ADC1_CHAN0, adc_raw[0][0]);
+        //ESP_LOGI(TAG, "ADC%d Channel[%d] Raw Data: %d", ADC_UNIT_1 + 1, EXAMPLE_ADC1_CHAN0, adc_raw[0][0]);
         if (do_calibration1_chan0) {
             ESP_ERROR_CHECK(adc_cali_raw_to_voltage(adc1_cali_chan0_handle, adc_raw[0][0], &voltage[0][0]));
-            ESP_LOGI(TAG, "ADC%d Channel[%d] Cali Voltage: %d mV", ADC_UNIT_1 + 1, EXAMPLE_ADC1_CHAN0, voltage[0][0]);
+           // ESP_LOGI(TAG, "ADC%d Channel[%d] Cali Voltage: %d mV", ADC_UNIT_1 + 1, EXAMPLE_ADC1_CHAN0, voltage[0][0]);
 			water_level=((voltage[0][0]-142)/44.13*3/2);
 			sprintf(message,"%2.1fcm",water_level);		
 			Write_Msg_toDisplay(2,message);
@@ -3693,7 +3692,7 @@ void app_main()
     ESP_LOGI(TAG, "Project name:     %s", app_desc->project_name);
     ESP_LOGI(TAG, "App version:      %s", app_desc->version);
 
-    esp_log_level_set("*", ESP_LOG_ERROR);
+    esp_log_level_set("*", ESP_LOG_VERBOSE);
 	esp_log_level_set("DEBUG_TASK", ESP_LOG_VERBOSE);
     /*esp_log_level_set("MQTT_CLIENT", ESP_LOG_VERBOSE);
     esp_log_level_set("TRANSPORT_TCP", ESP_LOG_VERBOSE);
@@ -3823,7 +3822,7 @@ Save_data_to_NVS();*/
 	if (USE_MCP) Init_DIO(Display._i2c_bus_handle);
     if(readDI(PRG_BUTTON)==0) {PARAM_VALUES[pRUN_MODE] =(1<<USE_BLE);Save_data_to_NVS();esp_restart();}
 
-	if (PARAM_VALUES[pRUN_MODE]  & (1<<USE_ACS71020))  init_ACS71020(Display._i2c_bus_handle,ACS71020_address_default);
+	if (PARAM_VALUES[pRUN_MODE]  & (1<<USE_ACS71020)) ACS71020_initialized= init_ACS71020(Display._i2c_bus_handle,ACS71020_address_default);
 
 
 	   //Check if Two Point or Vref are burned into eFuse

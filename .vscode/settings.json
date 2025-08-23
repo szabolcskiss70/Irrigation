@@ -10,7 +10,7 @@
     "IDF_TARGET": "esp32"
   },
   "idf.flashType": "UART",
-  "idf.portWin": "COM4",
+  "idf.portWin": "COM3",
   "files.associations": {
     "array": "c",
     "string": "c",
