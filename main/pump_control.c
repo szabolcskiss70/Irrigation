@@ -83,13 +83,17 @@ void getpumpbufferfromslave()
 }
 
 
+T_pump_states get_pump_id_state_array(int id)
+{
+  return (pump[id].status);
+}
+
+
 
 T_pump_states get_pump_id_state(int id)
 {
  if (id==0)  return (pump[id].status);
  return((T_pump_states) getvaluefromslave("get_pump_id_state"));
-
-
 }
 
 
@@ -280,7 +284,7 @@ static void pump_cloning_task(void* pvParameters)
 {
  while (true)
  {
-  ESP_LOGI("DEBUG_TASK","getpumpbufferfromslave");
+  //ESP_LOGI("DEBUG_TASK","getpumpbufferfromslave");
   getpumpbufferfromslave();
  }
 vTaskDelay(10*1000 / portTICK_PERIOD_MS);
@@ -484,6 +488,10 @@ void GetVolumeString(char *result_string)
   }
 
 }
+
+
+bool isPUMP_disabled_local(int id) {return(get_pump_id_state_array(id)==P_DISABLED);}
+
 
 bool isPUMP_disabled(int id) {return(get_pump_id_state(id)==P_DISABLED);}
 

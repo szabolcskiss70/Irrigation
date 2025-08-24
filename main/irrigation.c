@@ -517,6 +517,7 @@ void to_lower(const char *str, char *out_str)
 			
 			fclose(ptr_file);
 	    }
+	    else my_esp_mqtt_client_publish(mqtt_client, "ERROR", "failed to open file!", 0, 0, 0);
 	}
 }
 
@@ -1809,8 +1810,8 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             break;
         case MQTT_EVENT_DATA:
             ESP_LOGI(TAG, "MQTT_EVENT_DATA");
-			printf("TOPIC=%.*s\r\n", event->topic_len, event->topic);
-            printf("DATA=%.*s\r\n", event->data_len, event->data);
+			ESP_LOGI(TAG,"TOPIC=%.*s\r\n", event->topic_len, event->topic);
+            ESP_LOGI(TAG,"DATA=%.*s\r\n", event->data_len, event->data);
 			strncpy(ltopic,event->topic,event->topic_len);
 			ltopic[event->topic_len]=0;
 			to_upper(ltopic,ltopic);
@@ -1819,7 +1820,10 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 			ESP_LOGI(TAG, "%s",ltopic);
 			ESP_LOGI(TAG, "%s",ldata);
 	xSemaphoreTake(mqtt_ble_mutex, portMAX_DELAY);
-	 if(Process_EVENT_DATA(ltopic,ldata, true)) printf("Process_EVENT_DATA returned true");
+	 if(Process_EVENT_DATA(ltopic,ldata, true)) 
+	 {
+		ESP_LOGI("TAG","Process_EVENT_DATA returned true");
+	 }
 	xSemaphoreGive(mqtt_ble_mutex);
 
 
@@ -3198,7 +3202,7 @@ void Save_data_to_NVS()
      char keyName[32];
 
      sprintf(keyName,"P%1.1d_DIS",ch);
-	 nvs_set_u8(nvs_handle, keyName, isPUMP_disabled(ch)?1:0); 
+	 nvs_set_u8(nvs_handle, keyName, isPUMP_disabled_local(ch)?1:0); 
 	 
 	 sprintf(keyName,"P%1.1d_DELAY",ch);
 	 nvs_set_u8(nvs_handle, keyName,(uint8_t)get_restart_delay(ch));
@@ -3720,13 +3724,13 @@ void app_main()
 	ESP_ERROR_CHECK(err);   
 
 	
-//	  esp_log_level_set("*", ESP_LOG_ERROR);
+	  esp_log_level_set("*", ESP_LOG_ERROR);
 	  
 	  Mount_my_Filesystem("user_fs");
 	  remove(LOG_FILE);
 	  append_log(LOG_FILE,"Rebooted\n");
-	  //_log_remote_fp=fopen(LOG_FILE,"w+");
-      //esp_log_set_vprintf(&_log_vprintf);	
+	  _log_remote_fp=fopen(LOG_FILE,"w+");
+	  if (_log_remote_fp!=NULL) esp_log_set_vprintf(&_log_vprintf);	
 
 
     Load_general_data_from_NVS();   

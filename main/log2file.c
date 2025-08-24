@@ -193,6 +193,7 @@ void Mount_my_Filesystem(char *partition)
   if (!FSmounted)  
    {
     wl_handle =Mount_Filesystem(partition); 
+    //esp_vfs_fat_sdcard_format("/spiflash", wl_handle);
     FSmounted=true; 
    }  
 }

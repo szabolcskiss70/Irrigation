@@ -65,6 +65,7 @@ void get_LEVEL_string(char* result_string);
 int measure_flowrate();
 void GetVolumeString(char *result_string);
 bool isPUMP_disabled(int id);
+bool isPUMP_disabled_local(int id);
 bool isPUMP_available(int id);
 bool getPUMP_prio(int id);
 void setPUMP_prio(int id, bool val);
