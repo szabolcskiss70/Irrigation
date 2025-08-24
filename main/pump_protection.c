@@ -19,12 +19,13 @@ static bool motor_prot_on = true;
 
 
 // Bimetál szimulációs task
-bool motor_protect_func(float I,float T_trip,float T_reset,int looptime_ms,bool pumpstatus) {
+bool motor_protect_func(float I,float T_trip,float T_reset,int looptime_ms,bool pumpstatus,float *T_max) {
     const float dt = looptime_ms/1000; // másodperc, diszkrét időlépés
 
         // Differenciaegyenlet diszkrét alakja
         float dT = (I*I*R_eq - deltaT / R_th) * (dt / C_th);
         deltaT += dT;
+        if (deltaT>*T_max) *T_max=deltaT;
 
         // Védelem logika
         if (motor_prot_on && deltaT >= T_trip) {

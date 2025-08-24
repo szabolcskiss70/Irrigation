@@ -21,6 +21,7 @@ extern esp_mqtt_client_handle_t mqtt_client;
 extern bool Process_EVENT_DATA(char* ltopic, char* ldata, bool MQTT);
 //typedef enum {P_OVER_CURRENT,P_FLOW_PROT,P_DISABLED, P_SUSPENDED,P_DELAY,P_OFF,P_RESUMED,P_ON} T_pump_states;
 extern T_pump_states get_pump_id_state(int id);
+extern int measure_flowrate_on_local_pump(int running_pump_ID);
 extern char MQTT_BLE_answer[2048];
 
 
@@ -110,14 +111,23 @@ void task_rx(void *p)
 			  sprintf((char*)lora_transmit_buf,"IRRSRETI_%lu_%d",tick,get_pump_id_state(0)); 
 			  lora_send_packet(lora_transmit_buf,strlen((char*)lora_transmit_buf)); 
 			 }
-			 else if (strcmp(ldata,"get_pump_id_struct")==0)
+			if (strcmp(ldata,"get_flow_rate")==0)
+			 {
+			  sprintf((char*)lora_transmit_buf,"IRRSRETI_%lu_%d",tick,measure_flowrate_on_local_pump(0)); 
+			  lora_send_packet(lora_transmit_buf,strlen((char*)lora_transmit_buf)); 
+			 }
+			 
+			else if (sscanf((char*)lora_receive_buf,"IRRMGETB_%lu_%s",&tick,ldata)==2)
+			{
+			 if (strcmp(ldata,"get_pump_id_struct")==0)
 			 {
 			  int sizeT_pump=sizeof(T_pump);
 			  sprintf((char*)lora_transmit_buf,"IRRSRETB_%lu_",tick);
 			  int header_length=strlen((char*)lora_transmit_buf);
-			  memcpy(lora_transmit_buf+header_length,&pump[0],sizeT_pump);
+			  memcpy(lora_transmit_buf+header_length,&pump[2],sizeT_pump);
 			  lora_send_packet(lora_transmit_buf,header_length+sizeT_pump); 
 			 }
+			}
 			}
 			else if (sscanf((char*)lora_receive_buf,"IRRSRETI_%lu_%d",&tick,&intval)==2)
 			{

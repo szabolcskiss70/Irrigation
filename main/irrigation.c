@@ -140,6 +140,7 @@ typedef bool T_MQTT_Sub_Callback(char* ltopic, char* ldata, bool MQTT,char wilca
 
 #include "ACS71020.h"
 bool ACS71020_initialized=false;
+int ACS71020_address=ACS71020_address_default;
 
 
 
@@ -150,7 +151,9 @@ bool ACS71020_initialized=false;
 
 #define BROKER_URL "mqtt://szabolcskiss.ddns.net:1883"
 char maintopic[16]="IRRIGATIONx";
-
+#define MAX_CHANNEL_NUM 3
+#define MAX_PUMP_NUM 3
+#define PERIODS 10
 
 const esp_app_desc_t *app_desc;
 char new_Firmware_version[16];
@@ -165,15 +168,11 @@ typedef enum {USE_BLE,USE_WIFI,USE_ACS71020,MAIN_TASK,HANDLE_SCHEDULED,MOTOR_CUR
 //int PARAM_VALUES[pRUN_MODE] =(1<<USE_BLE) | (1<<USE_WIFI);
 bool USE_MCP=false;
 
-typedef enum {pRUN_MODE,pPUMP_NUM,pCHANNEL_NUM} T_PARAMS;
-char * PARAM_NAMES[pCHANNEL_NUM-pRUN_MODE+1]={"RUN_MODE","PUMP_NUM","CHANNEL_NUM"};
-int  PARAM_VALUES[pCHANNEL_NUM-pRUN_MODE+1]={3,1,3};
-int PARAM_LL[pCHANNEL_NUM-pRUN_MODE+1]={3,0,0};
-int PARAM_UL[pCHANNEL_NUM-pRUN_MODE+1]={(1<<(USE_LORA+1))-1,2,3};
-
-
-//PARAM_VALUES[pCHANNEL_NUM] 
-
+typedef enum {pRUN_MODE,pPUMP_NUM,pCHANNEL_NUM,pACS71020_ADDRESS,pSLAVE_RELAY,pLAST} T_PARAMS;
+char * PARAM_NAMES[pLAST-pRUN_MODE]={"RUN_MODE","PUMP_NUM","CHANNEL_NUM","ACS71020_ADDRESS","SLAVE_RELAY"};
+int  PARAM_VALUES[pLAST-pRUN_MODE+1]={3,1,3,ACS71020_address_default,-1};
+int PARAM_LL[pLAST-pRUN_MODE+1]={3,0,0,ACS71020_address_min,-1};
+int PARAM_UL[pLAST-pRUN_MODE+1]={(1<<(USE_LORA+1))-1,MAX_PUMP_NUM,MAX_CHANNEL_NUM,ACS71020_address_max,1};
 
 
 static const int WIFI_CONNECTED_BIT = BIT0;
@@ -218,6 +217,8 @@ time_t now_life_sent=0;
 const int DS_PIN = 17; //GPIO where you connected ds18b20
 
 #define GPIO_OUTPUT_PUMP_1   23
+#define GPIO_OUTPUT_PUMP_2   22
+#define SLAVE_RELAY  22
 #define GPIO_OUTPUT_OUT_2    12
 #define GPIO_OUTPUT_OUT_3    2
 #define GPIO_OUTPUT_OUT_4    25
@@ -229,7 +230,7 @@ const int DS_PIN = 17; //GPIO where you connected ds18b20
 #define PRG_BUTTON 0
 
 
-#define GPIO_OUTPUT_PIN_SEL  (1ULL<<GPIO_OUTPUT_PUMP_1 | 1ULL<<GPIO_OUTPUT_OUT_2 | 1ULL<<GPIO_OUTPUT_OUT_3 | 1ULL<<GPIO_OUTPUT_OUT_4 | 1ULL<<GPIO_Vext)
+#define GPIO_OUTPUT_PIN_SEL  (1ULL<<GPIO_OUTPUT_PUMP_1 | 1ULL<<GPIO_OUTPUT_PUMP_2 | 1ULL<<GPIO_OUTPUT_OUT_2 | 1ULL<<GPIO_OUTPUT_OUT_3 | 1ULL<<GPIO_OUTPUT_OUT_4 | 1ULL<<GPIO_Vext)
 //#define GPIO_INPUT_PIN_SEL (1ULL<<ISOLATED_INPUT_PUMP_1 | 1ULL<<ISOLATED_INPUT_2)
 
 
@@ -343,9 +344,7 @@ typedef struct{
 
 
 
-#define MAX_CHANNEL_NUM 3
-#define MAX_PUMP_NUM 2
-#define PERIODS 10
+
 typedef struct{
 	char Name[8]; //Name of the channel
 	int Valve_GPIO_OUTPUT;
@@ -816,7 +815,7 @@ int update_item(char * ldata,char* item,int data_addr)
 			 {
 				 eeprom_reg_t reg; 
 				 xSemaphoreTake(I2C_mutex, portMAX_DELAY);
-	     		  reg.frame.value = read_ACS71020_register(ACS71020_address_default, data_addr, 0xffffffff, 0,0);
+	     		  reg.frame.value = read_ACS71020_register(ACS71020_address, data_addr, 0xffffffff, 0,0);
 				 xSemaphoreGive(I2C_mutex); 
 				 
 				 switch(data_addr)
@@ -882,9 +881,9 @@ int update_item(char * ldata,char* item,int data_addr)
 				 }
 				 
 				 xSemaphoreTake(I2C_mutex, portMAX_DELAY);
-				  write_ACS71020(ACS71020_address_default, 0x2F, 0x4f70656E); //enter to customer mode
-				  write_ACS71020(ACS71020_address_default, data_addr+0x10, reg.frame.fields.eeprom_data); //write shadow
-				  write_ACS71020(ACS71020_address_default, data_addr, reg.frame.fields.eeprom_data); //write EEPROM	
+				  write_ACS71020(ACS71020_address, 0x2F, 0x4f70656E); //enter to customer mode
+				  write_ACS71020(ACS71020_address, data_addr+0x10, reg.frame.fields.eeprom_data); //write shadow
+				  write_ACS71020(ACS71020_address, data_addr, reg.frame.fields.eeprom_data); //write EEPROM	
 				 xSemaphoreGive(I2C_mutex); 
 				 my_esp_mqtt_client_publish(mqtt_client, "ACS71020", "shadow + eeprom writen", 0, 0, 0);   //Qos=0; retain=0	 
 				 return 1;
@@ -1257,7 +1256,7 @@ bool ACS71020_read_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[
 				 case 3: shift_right=0;   [[fallthrough]];
 				 case 4: 
 						xSemaphoreTake(I2C_mutex, portMAX_DELAY);
-							val= read_ACS71020_register(ACS71020_address_default, reg, mask, shift_left,shift_right);
+							val= read_ACS71020_register(ACS71020_address, reg, mask, shift_left,shift_right);
 						xSemaphoreGive(I2C_mutex); 		
 						 sprintf(strval,"%x:%lx",reg,val);
 						 my_esp_mqtt_client_publish(mqtt_client, "ACS71020", strval, 0, 0, 0);   //Qos=0; retain=0	
@@ -1279,8 +1278,8 @@ bool ACS71020_write_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic
 				if ((data_addr>=0x1B) && (data_addr<=0x1F)) 
 				{//write SHADOW
 				    xSemaphoreTake(I2C_mutex, portMAX_DELAY);
-					 write_ACS71020(ACS71020_address_default, 0x2F, 0x4f70656E); //enter to customer mode
-					 write_ACS71020(ACS71020_address_default, data_addr, regValue); //write shadow
+					 write_ACS71020(ACS71020_address, 0x2F, 0x4f70656E); //enter to customer mode
+					 write_ACS71020(ACS71020_address, data_addr, regValue); //write shadow
 					 xSemaphoreGive(I2C_mutex); 
 					my_esp_mqtt_client_publish(mqtt_client, "ACS71020", "shadow writen", 0, 0, 0);   //Qos=0; retain=0	
 				    if(!MQTT) sprintf(MQTT_BLE_answer,"%s {%s}", "ACS71020","shadow writen"); 
@@ -1288,9 +1287,9 @@ bool ACS71020_write_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic
 				else if ((data_addr>=0x0B) && (data_addr<=0x0F)) 
 				{//write SHADOW + EEPROM
 					xSemaphoreTake(I2C_mutex, portMAX_DELAY);
-					 write_ACS71020(ACS71020_address_default, 0x2F, 0x4f70656E); //enter to customer mode
-					 write_ACS71020(ACS71020_address_default, data_addr+0x10, regValue); //write shadow
-				     write_ACS71020(ACS71020_address_default, data_addr, regValue); //write EEPROM*/	
+					 write_ACS71020(ACS71020_address, 0x2F, 0x4f70656E); //enter to customer mode
+					 write_ACS71020(ACS71020_address, data_addr+0x10, regValue); //write shadow
+				     write_ACS71020(ACS71020_address, data_addr, regValue); //write EEPROM*/	
 					xSemaphoreGive(I2C_mutex); 
 					my_esp_mqtt_client_publish(mqtt_client, "ACS71020", "shadow + eeprom writen", 0, 0, 0);   //Qos=0; retain=0	
 				    if(!MQTT) sprintf(MQTT_BLE_answer,"%s {%s}", "ACS71020","shadow + eeprom writen"); 
@@ -1504,7 +1503,7 @@ bool param_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 				    sprintf(MQTT_BLE_answer,"%s {%s}", "maintopic",maintopic); 
 				  }
 				  else
-                  for (int i=pRUN_MODE;i<=pCHANNEL_NUM;i++)
+                  for (int i=pRUN_MODE;i<pLAST;i++)
 				  {
 					char Variable_name_and_format[32];
 					sprintf(Variable_name_and_format,"%s:%%d",PARAM_NAMES[i]);
@@ -1515,6 +1514,11 @@ bool param_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 						 PARAM_VALUES[i]=intval;
 						 Save_data_to_NVS();
 				         sprintf(MQTT_BLE_answer,"%s {%d}", PARAM_NAMES[i],PARAM_VALUES[i]); 
+						 if (strcmp(PARAM_NAMES[i],"SLAVE_RELAY")==0)
+						 {
+						     //set_DIO_direction(SLAVE_RELAY,GPIO_MODE_OUTPUT);
+    						 writeDO(SLAVE_RELAY, (intval==1)?1:0);
+						 }
 					 } 
 					}
 				  }
@@ -2396,8 +2400,8 @@ void testValveSwitching()
  if (PARAM_VALUES[pCHANNEL_NUM]==0) return;	
  char message[128]="";	
  xSemaphoreTake(I2C_mutex, portMAX_DELAY);
-  init_ACS71020(Display._i2c_bus_handle,ACS71020_address_default);
-  double p_standby=    MeasuredValue(ACS71020_address_default, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs);
+  init_ACS71020(Display._i2c_bus_handle,ACS71020_address);
+  double p_standby=    MeasuredValue(ACS71020_address, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs);
  xSemaphoreGive(I2C_mutex); 
  double p_valve;
  for(int ch=0;ch<PARAM_VALUES[pCHANNEL_NUM];ch++)
@@ -2405,7 +2409,7 @@ void testValveSwitching()
    writeDO(channels[ch].Valve_GPIO_OUTPUT, true);
    vTaskDelay(3*1000 / portTICK_PERIOD_MS);
    xSemaphoreTake(I2C_mutex, portMAX_DELAY);
-    p_valve=MeasuredValue(ACS71020_address_default, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs)-p_standby; 
+    p_valve=MeasuredValue(ACS71020_address, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs)-p_standby; 
    xSemaphoreGive(I2C_mutex); 
    writeDO(channels[ch].Valve_GPIO_OUTPUT, false);
    sprintf(message+strlen(message),"Ch:%d, Valve power:%0.1lfW\n",ch,p_valve);
@@ -2633,7 +2637,7 @@ void mainTask(void *pvParameters){
 		{   int timediff;
 			if((channels[ch].Chedule_array[i].on_time<now) && (channels[ch].Chedule_array[i].off_time>now) )
 		{
-			ESP_LOGI(TAG,"times:%d<%d<%d",(int)channels[ch].Chedule_array[i].on_time,(int)now,(int)channels[ch].Chedule_array[i].off_time);
+			//ESP_LOGI(TAG,"times:%d<%d<%d",(int)channels[ch].Chedule_array[i].on_time,(int)now,(int)channels[ch].Chedule_array[i].off_time);
 		    time2nextperiodstart=0;	
 			
 			if(now-channels[ch].Chedule_array[i].on_time<30) 
@@ -2730,28 +2734,28 @@ char message[128];
 xSemaphoreTake(I2C_mutex, portMAX_DELAY);
 		
 /*	
-double i=    MeasuredValue(ACS71020_address_default, 0x2B, 0x0001ffff,15, 0,15,30.0);
+double i=    MeasuredValue(ACS71020_address, 0x2B, 0x0001ffff,15, 0,15,30.0);
 // ESP_LOGI(TAG, "i= %lf", i);
-double u=    MeasuredValue(ACS71020_address_default, 0x2A, 0x0001ffff,15, 0,16,0.275*(R1_4+Rs)/Rs; 
+double u=    MeasuredValue(ACS71020_address, 0x2A, 0x0001ffff,15, 0,16,0.275*(R1_4+Rs)/Rs; 
 //ESP_LOGI(TAG, "u= %lf", u);
 */
-double irms= MeasuredValue(ACS71020_address_default, 0x20, 0x7fff0000, 0,16,14,30.0);
+double irms= MeasuredValue(ACS71020_address, 0x20, 0x7fff0000, 0,16,14,30.0);
 //ESP_LOGI(TAG, "irms= %lf", irms);
-double urms= MeasuredValue(ACS71020_address_default, 0x20, 0x00007fff, 0, 0,15,0.275*(R1_4+Rs)/Rs); 
+double urms= MeasuredValue(ACS71020_address, 0x20, 0x00007fff, 0, 0,15,0.275*(R1_4+Rs)/Rs); 
 
 /*
-double urms_1s= MeasuredValue(ACS71020_address_default, 0x26, 0x00007fff, 0, 0,15,0.275*(R1_4+Rs)/Rs; 
+double urms_1s= MeasuredValue(ACS71020_address, 0x26, 0x00007fff, 0, 0,15,0.275*(R1_4+Rs)/Rs; 
 
-double urms_1m= MeasuredValue(ACS71020_address_default, 0x27, 0x00007fff, 0, 0,15,0.275*(R1_4+Rs)/Rs; 
+double urms_1m= MeasuredValue(ACS71020_address, 0x27, 0x00007fff, 0, 0,15,0.275*(R1_4+Rs)/Rs; 
 
 
 //ESP_LOGI(TAG, "urms= %lf", urms);
 */
-double num=  MeasuredValue(ACS71020_address_default, 0x25, 0x000001ff, 0, 0,0,1); 
+double num=  MeasuredValue(ACS71020_address, 0x25, 0x000001ff, 0, 0,0,1); 
 //ESP_LOGI(TAG, "num= %lf", num);
 
 
-double p=    MeasuredValue(ACS71020_address_default, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs);
+double p=    MeasuredValue(ACS71020_address, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs);
 //ESP_LOGI(TAG, "p= %lf", p);
 
 
@@ -3090,7 +3094,7 @@ void Load_general_data_from_NVS()
 	 size_t length=sizeof(maintopic);
     if((ret=nvs_open("my_NVS", NVS_READWRITE, &nvs_handle))!=ESP_OK) ESP_LOGI(TAG, "NVS open failed. %d",ret);
 	nvs_get_str(nvs_handle, "maintopic", maintopic,&length);
-	for (int i=pRUN_MODE;i<=pCHANNEL_NUM;i++)
+	for (int i=pRUN_MODE;i<pLAST;i++)
 	{
  	 if(nvs_get_i32(nvs_handle, PARAM_NAMES[i],&intval)==ESP_OK) PARAM_VALUES[i] =(int)intval;
 	 ESP_LOGI(TAG, "%s:%d",PARAM_NAMES[i],PARAM_VALUES[i]);
@@ -3187,7 +3191,7 @@ void Save_data_to_NVS()
 		
    // TEST_ESP_OK(nvs_erase_all(nvs_handle));
    nvs_set_str(nvs_handle, "maintopic", maintopic);
-   for (int i=pRUN_MODE;i<=pCHANNEL_NUM;i++) nvs_set_i32(nvs_handle, PARAM_NAMES[i],PARAM_VALUES[i]);
+   for (int i=pRUN_MODE;i<pLAST;i++) nvs_set_i32(nvs_handle, PARAM_NAMES[i],PARAM_VALUES[i]);
    
    for (ch=0;ch<2;ch++)
    {
@@ -3263,7 +3267,7 @@ void PowerMeterTask(void *pvParameters){
 
         vTaskDelayUntil( &xLastWakeTime, xFrequency);
 		xSemaphoreTake(I2C_mutex, portMAX_DELAY);
-		  powerconsumptionWs+=    MeasuredValue(ACS71020_address_default, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs)*60.0;
+		  powerconsumptionWs+=    MeasuredValue(ACS71020_address, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs)*60.0;
 		xSemaphoreGive(I2C_mutex); 
   
     }
@@ -3742,14 +3746,17 @@ Save_data_to_NVS();*/
 	ESP_LOGE("ID1","%d",pump[1].ID);
 	ESP_LOGE("ID2","%d",testP1.ID);*/
 
+    I2C_mutex = xSemaphoreCreateMutex();
+	mqtt_ble_mutex = xSemaphoreCreateMutex();
+	MAIN_TASK_mutex = xSemaphoreCreateMutex();
 
-
-  //int limit=1200/10*YF_DN32_PULSE_PER_LITER/60*2000/1000;
-  //ESP_LOGI("TEST","%d",limit);
-
+    if (PARAM_VALUES[pRUN_MODE]  & (1<<USE_LORA)) init_lora();
+	
+  
 	switch (PARAM_VALUES[pPUMP_NUM] )
-	{
-	  case 2: init_pump(1,1000+GPIO_OUTPUT_PUMP_1,-1,-1,false,false); 
+	{ 
+	  case 3: init_pump(2,-1,-1,-1,false,false);	
+	  case 2: init_pump(1,GPIO_OUTPUT_PUMP_2,-1,-1,false,false); 
 	  case 1: init_pump(0,GPIO_OUTPUT_PUMP_1,ISOLATED_INPUT_PUMP_1,ISOLATED_INPUT_2,true,true); 
 			  break;
 	  default: break;
@@ -3767,16 +3774,24 @@ Save_data_to_NVS();*/
 	  default: break;
 	}
 
-//	delete_all_chedules();
-    I2C_mutex = xSemaphoreCreateMutex();
-	mqtt_ble_mutex = xSemaphoreCreateMutex();
-	MAIN_TASK_mutex = xSemaphoreCreateMutex();
+
+
 
     //vTaskDelay(10*1000 / portTICK_PERIOD_MS);
     if (PARAM_VALUES[pRUN_MODE]  & (1<<USE_BLE)) init_BLE();
 
 	Load_data_from_NVS();
 
+    if(PARAM_VALUES[pSLAVE_RELAY]==1)
+	{
+     //set_DIO_direction(SLAVE_RELAY,GPIO_MODE_OUTPUT);
+     writeDO(SLAVE_RELAY, 1);			
+	}
+	else if(PARAM_VALUES[pSLAVE_RELAY]==0)
+	 {
+	 //set_DIO_direction(SLAVE_RELAY,GPIO_MODE_OUTPUT);
+     writeDO(SLAVE_RELAY, 0);
+	 }	
 
 	
 	 gpio_config_t io_conf;
@@ -3793,21 +3808,6 @@ Save_data_to_NVS();*/
     //configure GPIO with the given settings
     gpio_config(&io_conf);
 	
-	
-	/*
-	
-	//interrupt of rising edge
-    io_conf.intr_type = GPIO_INTR_DISABLE;
-    //bit mask of the pins, use GPIO4/5 here
-    io_conf.pin_bit_mask = GPIO_INPUT_PIN_SEL;
-    //set as input mode    
-    io_conf.mode = GPIO_MODE_INPUT;
-    //enable pull-up mode
-    io_conf.pull_up_en = 0;
-    gpio_config(&io_conf);
-	
-	gpio_set_direction(PRG_BUTTON ,GPIO_MODE_INPUT);
-	gpio_set_pull_mode(PRG_BUTTON,GPIO_PULLUP_ONLY);*/
 
     set_DIO_direction(PRG_BUTTON,GPIO_MODE_INPUT);
     gpio_set_pull_mode(PRG_BUTTON,GPIO_PULLUP_ONLY);
@@ -3822,7 +3822,7 @@ Save_data_to_NVS();*/
 	if (USE_MCP) Init_DIO(Display._i2c_bus_handle);
     if(readDI(PRG_BUTTON)==0) {PARAM_VALUES[pRUN_MODE] =(1<<USE_BLE);Save_data_to_NVS();esp_restart();}
 
-	if (PARAM_VALUES[pRUN_MODE]  & (1<<USE_ACS71020)) ACS71020_initialized= init_ACS71020(Display._i2c_bus_handle,ACS71020_address_default);
+	if (PARAM_VALUES[pRUN_MODE]  & (1<<USE_ACS71020)) ACS71020_initialized= init_ACS71020(Display._i2c_bus_handle,ACS71020_address);
 
 
 	   //Check if Two Point or Vref are burned into eFuse
@@ -3866,7 +3866,7 @@ Save_data_to_NVS();*/
 
 
 
-    if (PARAM_VALUES[pRUN_MODE]  & (1<<USE_LORA)) init_lora();
+
 	
 
     if (PARAM_VALUES[pRUN_MODE]  & (1<<USE_WIFI)) initialise_wifi();
@@ -3913,8 +3913,8 @@ Save_data_to_NVS();*/
 
 
 
-//	readEeprom(ACS71020_address_default);
-//    readShadow(ACS71020_address_default);
+//	readEeprom(ACS71020_address);
+//    readShadow(ACS71020_address);
 	
 
 
@@ -3970,7 +3970,7 @@ Save_data_to_NVS();*/
 		 GetPumpStatusString(0,msg,sizeof(msg)-1);
 		 ESP_LOGI("SLAVE_TEST","pump status: %s",msg);
 
-		double urms= MeasuredValue(ACS71020_address_default, 0x20, 0x00007fff, 0, 0,15,0.275*(R1_4+Rs)/Rs); 
+		double urms= MeasuredValue(ACS71020_address, 0x20, 0x00007fff, 0, 0,15,0.275*(R1_4+Rs)/Rs); 
 		ESP_LOGI("SLAVE_TEST","urms: %lf",urms);
 
 	}

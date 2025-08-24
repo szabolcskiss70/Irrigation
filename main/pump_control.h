@@ -23,6 +23,9 @@ typedef struct{
 	float max_current;
 	float T_trip;
 	float T_reset;
+	float T_max;
+	float I_max;
+	float last_T;
 	T_pump_states status; //actual pump status
 	int GPIO_PUMP; //GPIO of pump relay
 	int GPIO_PROT; //gpio of protection imput
@@ -46,7 +49,7 @@ typedef struct{
 	int flow_rate_protection_limit_dl_per_min;
 } T_pump; 
 
-extern T_pump pump[2];
+extern T_pump pump[3];
 extern int pump_num;
 
 void switch_pump(bool on_state, T_pump_list assigned_pump);
