@@ -1151,6 +1151,17 @@ bool TO_SLAVE_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32
 	return true;
 }
 
+void set_pump_default_params(int id)
+{
+	enable_pump(id,true);
+	setPUMP_prio(id,false);
+	setPUMP_switchbackifavailable(id,false);
+	set_restart_delay(id,15);
+	set_flow_rate_protection_limit_dl_per_min(id,50);
+	set_T_trip(id,150);
+	set_T_reset(id,20);
+	set_max_current(10000);
+}
 
 bool PUMP_PARAM_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 {
@@ -1239,7 +1250,7 @@ bool PUMP_PARAM_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][
 				 }
 				 else sprintf(MQTT_BLE_answer,"%s %s", "T_RESET","invalid format!"); 
 		}
-
+        else if (strcmp(wilcarded_topic[0],"SET_DEFAULT")==0) set_pump_default_params(ch); 
 
 
 
