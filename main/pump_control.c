@@ -324,8 +324,8 @@ void GetPumpStatusString(int id, char* message, int buf_size)
 {
  if (pump[id].GPIO_CNT!=-1) pcnt_unit_get_count(pump[id].pcnt_unit, &pump[id].daily_pump_flowmeter_counts);
  else pump[id].daily_pump_flowmeter_counts=0;
- char *MsgFormat= "P%d: Status:%s, Daily Volume:%1.1fl, Tmax:%1.1fC° Imax:%1.1fA\n";
- if (buf_size>strlen(MsgFormat)+16) sprintf(message,MsgFormat,id+1,PUMP_status_str[get_pump_id_state(id)],convertCNT2Liter(pump[id].daily_pump_flowmeter_counts),pump[id].T_max,pump[id].I_max);
+ char *MsgFormat= "P%d: Status:%s, Daily Volume:%1.1fl, Tmax:%1.1fC° Imax:%1.1fA Ttrip:%1.1fC° Treset:%1.1fC° FlowRate_min:%ddl/min, restart delay:%dmin\n";
+ if (buf_size>strlen(MsgFormat)+16) sprintf(message,MsgFormat,id+1,PUMP_status_str[get_pump_id_state(id)],convertCNT2Liter(pump[id].daily_pump_flowmeter_counts),pump[id].T_max,pump[id].I_max,get_T_trip(id),get_T_reset(id),get_flow_rate_protection_limit_dl_per_min(id),get_restart_delay(id));
 }
 
 void getpumptimechanges(int id, char* message, int buf_size)
@@ -518,6 +518,7 @@ void  set_T_reset(int id, float T_reset) {pump[id].T_reset=T_reset;}
 
 
 void  set_flow_rate_protection_limit_dl_per_min(int id, int flow_min_dlper_min) {pump[id].flow_rate_protection_limit_dl_per_min=flow_min_dlper_min;}
+int  get_flow_rate_protection_limit_dl_per_min(int id) {return(pump[id].flow_rate_protection_limit_dl_per_min);}
 
 
 

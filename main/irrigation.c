@@ -1225,7 +1225,7 @@ bool PUMP_PARAM_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][
 				 }
 				 else sprintf(MQTT_BLE_answer,"%s %s", "T_TRIP","invalid format!"); 
 		}	
-				else if (strcmp(wilcarded_topic[0],"T_RESET")==0)
+		else if (strcmp(wilcarded_topic[0],"T_RESET")==0)
 		{
 				int intval;
 				 if(sscanf(ldata,"%d",&intval)==1) 

@@ -80,6 +80,7 @@ float getsinkvolume(int id);
 float get_max_current(int id);
 void  set_max_current(int id, float imax);
 void  set_flow_rate_protection_limit_dl_per_min(int id, int flow_min_dlper_min);
+int   get_flow_rate_protection_limit_dl_per_min(int id);
 float get_T_trip(int id);
 void  set_T_trip(int id, float T_trip);
 float get_T_reset(int id);
