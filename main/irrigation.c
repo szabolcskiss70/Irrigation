@@ -1160,7 +1160,7 @@ void set_pump_default_params(int id)
 	set_flow_rate_protection_limit_dl_per_min(id,50);
 	set_T_trip(id,150);
 	set_T_reset(id,20);
-	set_max_current(10000);
+	set_max_current(id,10000);
 }
 
 bool PUMP_PARAM_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
