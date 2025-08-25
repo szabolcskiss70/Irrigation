@@ -96,7 +96,7 @@ void task_rx(void *p)
     		if (sscanf((char*)lora_receive_buf,"IRRMOSI_%lu_%[^=]=%[^\n]",&tick,ltopic,ldata)==3)
 			{
 			 to_upper(ltopic,ltopic);
-			 Process_EVENT_DATA(ltopic,ltopic,false);
+			 Process_EVENT_DATA(ltopic,ldata,false);
 			 sprintf((char*)lora_transmit_buf,"IRRMISO_%.240s DONE",MQTT_BLE_answer); 
 			 lora_send_packet(lora_transmit_buf,strlen((char*)lora_transmit_buf)); 
 			}
