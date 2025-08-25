@@ -168,11 +168,11 @@ typedef enum {USE_BLE,USE_WIFI,USE_ACS71020,MAIN_TASK,HANDLE_SCHEDULED,MOTOR_CUR
 //int PARAM_VALUES[pRUN_MODE] =(1<<USE_BLE) | (1<<USE_WIFI);
 bool USE_MCP=false;
 
-typedef enum {pRUN_MODE,pPUMP_NUM,pCHANNEL_NUM,pACS71020_ADDRESS,pSLAVE_RELAY,pLAST} T_PARAMS;
-char * PARAM_NAMES[pLAST-pRUN_MODE]={"RUN_MODE","PUMP_NUM","CHANNEL_NUM","ACS71020_ADDRESS","SLAVE_RELAY"};
-int  PARAM_VALUES[pLAST-pRUN_MODE+1]={3,1,3,ACS71020_address_default,-1};
-int PARAM_LL[pLAST-pRUN_MODE+1]={3,0,0,ACS71020_address_min,-1};
-int PARAM_UL[pLAST-pRUN_MODE+1]={(1<<(USE_LORA+1))-1,MAX_PUMP_NUM,MAX_CHANNEL_NUM,ACS71020_address_max,1};
+typedef enum {pRUN_MODE,pPUMP_NUM,pCHANNEL_NUM,pACS71020_ADDRESS,pSLAVE_RELAY,pFIRSTRUN,pLAST} T_PARAMS;
+char * PARAM_NAMES[pLAST-pRUN_MODE]={"RUN_MODE","PUMP_NUM","CHANNEL_NUM","ACS71020_ADDRESS","SLAVE_RELAY","FIRSTRUN"};
+int  PARAM_VALUES[pLAST-pRUN_MODE]={3,1,3,ACS71020_address_default,-1,1};
+int PARAM_LL[pLAST-pRUN_MODE]={3,0,0,ACS71020_address_min,-1,0};
+int PARAM_UL[pLAST-pRUN_MODE]={(1<<(USE_LORA+1))-1,MAX_PUMP_NUM,MAX_CHANNEL_NUM,ACS71020_address_max,1,1};
 
 
 static const int WIFI_CONNECTED_BIT = BIT0;
@@ -195,6 +195,7 @@ char* OTA_SOURCE_URL="https://github.com/szabolcskiss70/irrigation/raw/test_bran
 void ota_update_task(void *pvParameter);
 void switch_channel(int ch, T_states status);
 void Save_data_to_NVS();
+void Save_general_data_to_NVS();
 
 char MQTT_BLE_answer[2048]="";
 
@@ -1500,7 +1501,6 @@ bool param_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 				int intval;
 				  if(sscanf(ldata,"maintopic:%s",maintopic)==1) 
 				  {	 
-					Save_data_to_NVS();
 				    sprintf(MQTT_BLE_answer,"%s {%s}", "maintopic",maintopic); 
 				  }
 				  else
@@ -1513,7 +1513,6 @@ bool param_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 				     if ((intval>=PARAM_LL[i]) && (intval<=PARAM_UL[i])) 
 					 {
 						 PARAM_VALUES[i]=intval;
-						 Save_data_to_NVS();
 				         sprintf(MQTT_BLE_answer,"%s {%d}", PARAM_NAMES[i],PARAM_VALUES[i]); 
 						 if (strcmp(PARAM_NAMES[i],"SLAVE_RELAY")==0)
 						 {
@@ -1523,6 +1522,7 @@ bool param_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 					 } 
 					}
 				  }
+			      Save_general_data_to_NVS();
 			return true;
 			}
 bool run_mode___CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])			
@@ -3052,7 +3052,8 @@ void ota_update_task(void *pvParameter)
  ESP_LOGI(TAG, "OTA URL:%s",OTA_SOURCE_URL);
 //ESP_LOGI(TAG, "OTA CERT:%s",server_cert_pem_start);
 
-
+ PARAM_VALUES[pRUN_MODE]=3;
+ Save_general_data_to_NVS();
 
 
     esp_http_client_config_t config = {
@@ -3104,6 +3105,23 @@ void Load_general_data_from_NVS()
 	 ESP_LOGI(TAG, "%s:%d",PARAM_NAMES[i],PARAM_VALUES[i]);
 	} 
     nvs_close(nvs_handle);
+}
+
+
+void Save_general_data_to_NVS()
+{
+ nvs_handle_t  nvs_handle;
+	int i;
+    if(nvs_open("my_NVS", NVS_READWRITE, &nvs_handle)!=ESP_OK) ESP_LOGI(TAG, "NVS OPEN FAILED");
+		
+   // TEST_ESP_OK(nvs_erase_all(nvs_handle));
+   nvs_set_str(nvs_handle, "maintopic", maintopic);
+   for (int i=pRUN_MODE;i<pLAST;i++) nvs_set_i32(nvs_handle, PARAM_NAMES[i],PARAM_VALUES[i]);
+
+   if(nvs_commit(nvs_handle)!=ESP_OK) ESP_LOGI(TAG, "NVS COMMIT FAILED");; 
+
+    nvs_close(nvs_handle);
+	ESP_LOGI(TAG, "NVS STORED");
 }
 
 
@@ -3189,13 +3207,15 @@ void Load_data_from_NVS()
 
 void Save_data_to_NVS()
 {
+    Save_general_data_to_NVS();
+	   
     nvs_handle_t  nvs_handle;
 	 int i,ch;
     if(nvs_open("my_NVS", NVS_READWRITE, &nvs_handle)!=ESP_OK) ESP_LOGI(TAG, "NVS OPEN FAILED");
 		
    // TEST_ESP_OK(nvs_erase_all(nvs_handle));
-   nvs_set_str(nvs_handle, "maintopic", maintopic);
-   for (int i=pRUN_MODE;i<pLAST;i++) nvs_set_i32(nvs_handle, PARAM_NAMES[i],PARAM_VALUES[i]);
+   //nvs_set_str(nvs_handle, "maintopic", maintopic);
+  // for (int i=pRUN_MODE;i<pLAST;i++) nvs_set_i32(nvs_handle, PARAM_NAMES[i],PARAM_VALUES[i]);
    
    for (ch=0;ch<2;ch++)
    {
@@ -3734,6 +3754,14 @@ void app_main()
 
 
     Load_general_data_from_NVS();   
+
+    if(PARAM_VALUES[pFIRSTRUN]==1)
+	{
+     PARAM_VALUES[pFIRSTRUN]=0; 
+	 PARAM_VALUES[pRUN_MODE]=3; 
+     Save_general_data_to_NVS();
+	}
+
 /*
 PARAM_VALUES[pPUMP_NUM] =1;
 PARAM_VALUES[pCHANNEL_NUM] =0;
