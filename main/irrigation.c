@@ -140,7 +140,7 @@ typedef bool T_MQTT_Sub_Callback(char* ltopic, char* ldata, bool MQTT,char wilca
 
 #include "ACS71020.h"
 bool ACS71020_initialized=false;
-int ACS71020_address=ACS71020_address_default;
+//int ACS71020_address=ACS71020_address_default;
 
 
 
@@ -174,6 +174,7 @@ int  PARAM_VALUES[pLAST-pRUN_MODE]={3,1,3,ACS71020_address_default,-1,1};
 int PARAM_LL[pLAST-pRUN_MODE]={3,0,0,ACS71020_address_min,-1,0};
 int PARAM_UL[pLAST-pRUN_MODE]={(1<<(USE_LORA+1))-1,MAX_PUMP_NUM,MAX_CHANNEL_NUM,ACS71020_address_max,1,1};
 
+//PARAM_VALUES[pACS71020_ADDRESS]
 
 static const int WIFI_CONNECTED_BIT = BIT0;
 static const int WIFI_FAIL_BIT = BIT1;
@@ -817,7 +818,7 @@ int update_item(char * ldata,char* item,int data_addr)
 			 {
 				 eeprom_reg_t reg; 
 				 xSemaphoreTake(I2C_mutex, portMAX_DELAY);
-	     		  reg.frame.value = read_ACS71020_register(ACS71020_address, data_addr, 0xffffffff, 0,0);
+	     		  reg.frame.value = read_ACS71020_register(PARAM_VALUES[pACS71020_ADDRESS], data_addr, 0xffffffff, 0,0);
 				 xSemaphoreGive(I2C_mutex); 
 				 
 				 switch(data_addr)
@@ -883,9 +884,9 @@ int update_item(char * ldata,char* item,int data_addr)
 				 }
 				 
 				 xSemaphoreTake(I2C_mutex, portMAX_DELAY);
-				  write_ACS71020(ACS71020_address, 0x2F, 0x4f70656E); //enter to customer mode
-				  write_ACS71020(ACS71020_address, data_addr+0x10, reg.frame.fields.eeprom_data); //write shadow
-				  write_ACS71020(ACS71020_address, data_addr, reg.frame.fields.eeprom_data); //write EEPROM	
+				  write_ACS71020(PARAM_VALUES[pACS71020_ADDRESS], 0x2F, 0x4f70656E); //enter to customer mode
+				  write_ACS71020(PARAM_VALUES[pACS71020_ADDRESS], data_addr+0x10, reg.frame.fields.eeprom_data); //write shadow
+				  write_ACS71020(PARAM_VALUES[pACS71020_ADDRESS], data_addr, reg.frame.fields.eeprom_data); //write EEPROM	
 				 xSemaphoreGive(I2C_mutex); 
 				 my_esp_mqtt_client_publish(mqtt_client, "ACS71020", "shadow + eeprom writen", 0, 0, 0);   //Qos=0; retain=0	 
 				 return 1;
@@ -957,6 +958,16 @@ int _log_vprintf(const char *fmt, va_list args) {
     return vprintf(fmt, args);
 }
 
+#define I2C_TOOL_TIMEOUT_VALUE_MS (50)
+int detect_ACS71020_Address()
+{
+ for (int address = ACS71020_address_min; address <= ACS71020_address_max; address++) {
+            esp_err_t ret = i2c_master_probe(Display._i2c_bus_handle, address, I2C_TOOL_TIMEOUT_VALUE_MS);
+            if (ret == ESP_OK) return (address);
+		}
+ return 0;
+}
+
 
 bool DEBUG_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 {
@@ -995,6 +1006,10 @@ bool DEBUG_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 	else if (strcmp(ldata,"VALVE CHECK")==0)
 	{
      testValveSwitching();
+	}
+	else if (strcmp(ldata,"DETECT ACS71020")==0)
+	{
+		sprintf(MQTT_BLE_answer,"ACS71020 address:%d",detect_ACS71020_Address());	
 	}
 	else  strcpy(MQTT_BLE_answer,"Invalid parameter!");
 	return true;
@@ -1258,7 +1273,7 @@ bool ACS71020_read_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[
 				 case 3: shift_right=0;   [[fallthrough]];
 				 case 4: 
 						xSemaphoreTake(I2C_mutex, portMAX_DELAY);
-							val= read_ACS71020_register(ACS71020_address, reg, mask, shift_left,shift_right);
+							val= read_ACS71020_register(PARAM_VALUES[pACS71020_ADDRESS], reg, mask, shift_left,shift_right);
 						xSemaphoreGive(I2C_mutex); 		
 						 sprintf(strval,"%x:%lx",reg,val);
 						 my_esp_mqtt_client_publish(mqtt_client, "ACS71020", strval, 0, 0, 0);   //Qos=0; retain=0	
@@ -1280,8 +1295,8 @@ bool ACS71020_write_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic
 				if ((data_addr>=0x1B) && (data_addr<=0x1F)) 
 				{//write SHADOW
 				    xSemaphoreTake(I2C_mutex, portMAX_DELAY);
-					 write_ACS71020(ACS71020_address, 0x2F, 0x4f70656E); //enter to customer mode
-					 write_ACS71020(ACS71020_address, data_addr, regValue); //write shadow
+					 write_ACS71020(PARAM_VALUES[pACS71020_ADDRESS], 0x2F, 0x4f70656E); //enter to customer mode
+					 write_ACS71020(PARAM_VALUES[pACS71020_ADDRESS], data_addr, regValue); //write shadow
 					 xSemaphoreGive(I2C_mutex); 
 					my_esp_mqtt_client_publish(mqtt_client, "ACS71020", "shadow writen", 0, 0, 0);   //Qos=0; retain=0	
 				    if(!MQTT) sprintf(MQTT_BLE_answer,"%s {%s}", "ACS71020","shadow writen"); 
@@ -1289,9 +1304,9 @@ bool ACS71020_write_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic
 				else if ((data_addr>=0x0B) && (data_addr<=0x0F)) 
 				{//write SHADOW + EEPROM
 					xSemaphoreTake(I2C_mutex, portMAX_DELAY);
-					 write_ACS71020(ACS71020_address, 0x2F, 0x4f70656E); //enter to customer mode
-					 write_ACS71020(ACS71020_address, data_addr+0x10, regValue); //write shadow
-				     write_ACS71020(ACS71020_address, data_addr, regValue); //write EEPROM*/	
+					 write_ACS71020(PARAM_VALUES[pACS71020_ADDRESS], 0x2F, 0x4f70656E); //enter to customer mode
+					 write_ACS71020(PARAM_VALUES[pACS71020_ADDRESS], data_addr+0x10, regValue); //write shadow
+				     write_ACS71020(PARAM_VALUES[pACS71020_ADDRESS], data_addr, regValue); //write EEPROM*/	
 					xSemaphoreGive(I2C_mutex); 
 					my_esp_mqtt_client_publish(mqtt_client, "ACS71020", "shadow + eeprom writen", 0, 0, 0);   //Qos=0; retain=0	
 				    if(!MQTT) sprintf(MQTT_BLE_answer,"%s {%s}", "ACS71020","shadow + eeprom writen"); 
@@ -2406,8 +2421,8 @@ void testValveSwitching()
  if (PARAM_VALUES[pCHANNEL_NUM]==0) return;	
  char message[128]="";	
  xSemaphoreTake(I2C_mutex, portMAX_DELAY);
-  init_ACS71020(Display._i2c_bus_handle,ACS71020_address);
-  double p_standby=    MeasuredValue(ACS71020_address, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs);
+  init_ACS71020(Display._i2c_bus_handle,PARAM_VALUES[pACS71020_ADDRESS]);
+  double p_standby=    MeasuredValue(PARAM_VALUES[pACS71020_ADDRESS], 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs);
  xSemaphoreGive(I2C_mutex); 
  double p_valve;
  for(int ch=0;ch<PARAM_VALUES[pCHANNEL_NUM];ch++)
@@ -2415,7 +2430,7 @@ void testValveSwitching()
    writeDO(channels[ch].Valve_GPIO_OUTPUT, true);
    vTaskDelay(3*1000 / portTICK_PERIOD_MS);
    xSemaphoreTake(I2C_mutex, portMAX_DELAY);
-    p_valve=MeasuredValue(ACS71020_address, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs)-p_standby; 
+    p_valve=MeasuredValue(PARAM_VALUES[pACS71020_ADDRESS], 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs)-p_standby; 
    xSemaphoreGive(I2C_mutex); 
    writeDO(channels[ch].Valve_GPIO_OUTPUT, false);
    sprintf(message+strlen(message),"Ch:%d, Valve power:%0.1lfW\n",ch,p_valve);
@@ -2740,28 +2755,28 @@ char message[128];
 xSemaphoreTake(I2C_mutex, portMAX_DELAY);
 		
 /*	
-double i=    MeasuredValue(ACS71020_address, 0x2B, 0x0001ffff,15, 0,15,30.0);
+double i=    MeasuredValue(PARAM_VALUES[pACS71020_ADDRESS], 0x2B, 0x0001ffff,15, 0,15,30.0);
 // ESP_LOGI(TAG, "i= %lf", i);
-double u=    MeasuredValue(ACS71020_address, 0x2A, 0x0001ffff,15, 0,16,0.275*(R1_4+Rs)/Rs; 
+double u=    MeasuredValue(PARAM_VALUES[pACS71020_ADDRESS], 0x2A, 0x0001ffff,15, 0,16,0.275*(R1_4+Rs)/Rs; 
 //ESP_LOGI(TAG, "u= %lf", u);
 */
-double irms= MeasuredValue(ACS71020_address, 0x20, 0x7fff0000, 0,16,14,30.0);
+double irms= MeasuredValue(PARAM_VALUES[pACS71020_ADDRESS], 0x20, 0x7fff0000, 0,16,14,30.0);
 //ESP_LOGI(TAG, "irms= %lf", irms);
-double urms= MeasuredValue(ACS71020_address, 0x20, 0x00007fff, 0, 0,15,0.275*(R1_4+Rs)/Rs); 
+double urms= MeasuredValue(PARAM_VALUES[pACS71020_ADDRESS], 0x20, 0x00007fff, 0, 0,15,0.275*(R1_4+Rs)/Rs); 
 
 /*
-double urms_1s= MeasuredValue(ACS71020_address, 0x26, 0x00007fff, 0, 0,15,0.275*(R1_4+Rs)/Rs; 
+double urms_1s= MeasuredValue(PARAM_VALUES[pACS71020_ADDRESS], 0x26, 0x00007fff, 0, 0,15,0.275*(R1_4+Rs)/Rs; 
 
-double urms_1m= MeasuredValue(ACS71020_address, 0x27, 0x00007fff, 0, 0,15,0.275*(R1_4+Rs)/Rs; 
+double urms_1m= MeasuredValue(PARAM_VALUES[pACS71020_ADDRESS], 0x27, 0x00007fff, 0, 0,15,0.275*(R1_4+Rs)/Rs; 
 
 
 //ESP_LOGI(TAG, "urms= %lf", urms);
 */
-double num=  MeasuredValue(ACS71020_address, 0x25, 0x000001ff, 0, 0,0,1); 
+double num=  MeasuredValue(PARAM_VALUES[pACS71020_ADDRESS], 0x25, 0x000001ff, 0, 0,0,1); 
 //ESP_LOGI(TAG, "num= %lf", num);
 
 
-double p=    MeasuredValue(ACS71020_address, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs);
+double p=    MeasuredValue(PARAM_VALUES[pACS71020_ADDRESS], 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs);
 //ESP_LOGI(TAG, "p= %lf", p);
 
 
@@ -3297,7 +3312,7 @@ void PowerMeterTask(void *pvParameters){
 
         vTaskDelayUntil( &xLastWakeTime, xFrequency);
 		xSemaphoreTake(I2C_mutex, portMAX_DELAY);
-		  powerconsumptionWs+=    MeasuredValue(ACS71020_address, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs)*60.0;
+		  powerconsumptionWs+=    MeasuredValue(PARAM_VALUES[pACS71020_ADDRESS], 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs)*60.0;
 		xSemaphoreGive(I2C_mutex); 
   
     }
@@ -3709,8 +3724,6 @@ void init_BLE()
 
 
 
-
-
 void app_main()
 {
 
@@ -3860,7 +3873,12 @@ Save_data_to_NVS();*/
 	if (USE_MCP) Init_DIO(Display._i2c_bus_handle);
     if(readDI(PRG_BUTTON)==0) {PARAM_VALUES[pRUN_MODE] =(1<<USE_BLE);Save_data_to_NVS();esp_restart();}
 
-	if (PARAM_VALUES[pRUN_MODE]  & (1<<USE_ACS71020)) ACS71020_initialized= init_ACS71020(Display._i2c_bus_handle,ACS71020_address);
+	if (PARAM_VALUES[pRUN_MODE]  & (1<<USE_ACS71020)) 
+	{
+		//int detected_address= detect_ACS71020_Address();
+        //if(detected_address>0) PARAM_VALUES[pACS71020_ADDRESS]=detected_address;	
+		ACS71020_initialized= init_ACS71020(Display._i2c_bus_handle,PARAM_VALUES[pACS71020_ADDRESS]);
+	}
 
 
 	   //Check if Two Point or Vref are burned into eFuse
@@ -3951,8 +3969,8 @@ Save_data_to_NVS();*/
 
 
 
-//	readEeprom(ACS71020_address);
-//    readShadow(ACS71020_address);
+//	readEeprom(PARAM_VALUES[pACS71020_ADDRESS]);
+//    readShadow(PARAM_VALUES[pACS71020_ADDRESS]);
 	
 
 
@@ -4008,7 +4026,7 @@ Save_data_to_NVS();*/
 		 GetPumpStatusString(0,msg,sizeof(msg)-1);
 		 ESP_LOGI("SLAVE_TEST","pump status: %s",msg);
 
-		double urms= MeasuredValue(ACS71020_address, 0x20, 0x00007fff, 0, 0,15,0.275*(R1_4+Rs)/Rs); 
+		double urms= MeasuredValue(PARAM_VALUES[pACS71020_ADDRESS], 0x20, 0x00007fff, 0, 0,15,0.275*(R1_4+Rs)/Rs); 
 		ESP_LOGI("SLAVE_TEST","urms: %lf",urms);
 
 	}
