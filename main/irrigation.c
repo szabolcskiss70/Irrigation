@@ -1761,7 +1761,9 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 
 			 if(mqtt_connected)
 			 {		 
-			  sprintf(MQTT_BLE_answer,"%s PARAM_VALUES[pRUN_MODE] =%d",app_desc->version,PARAM_VALUES[pRUN_MODE] );
+			  sprintf(MQTT_BLE_answer,"%s\n",app_desc->version );
+			  for (int i=pRUN_MODE;i<pLAST;i++) sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s=%d\n",PARAM_NAMES[i],PARAM_VALUES[i] );
+			   
 			  msg_id = my_esp_mqtt_client_publish(mqtt_client, "FIRMWARE/RUNNING_VERSION",MQTT_BLE_answer, 0, 0, 1);   //Qos=1; retain=1
 			  ESP_LOGI(TAG, "publish successful, msg_id=%d", msg_id);
 			  
@@ -3101,7 +3103,11 @@ void Load_general_data_from_NVS()
 	nvs_get_str(nvs_handle, "maintopic", maintopic,&length);
 	for (int i=pRUN_MODE;i<pLAST;i++)
 	{
- 	 if(nvs_get_i32(nvs_handle, PARAM_NAMES[i],&intval)==ESP_OK) PARAM_VALUES[i] =(int)intval;
+ 	 if(nvs_get_i32(nvs_handle, PARAM_NAMES[i],&intval)==ESP_OK) 
+	 {
+	    PARAM_VALUES[i] =(int)intval;
+		ESP_LOGI(TAG, "%d,%s:%d,%ld",i,PARAM_NAMES[i],PARAM_VALUES[i],intval);
+	 }
 	 ESP_LOGI(TAG, "%s:%d",PARAM_NAMES[i],PARAM_VALUES[i]);
 	} 
     nvs_close(nvs_handle);
@@ -3751,8 +3757,8 @@ void app_main()
 	  append_log(LOG_FILE,"Rebooted\n");
 	  _log_remote_fp=fopen(LOG_FILE,"w+");
 	  if (_log_remote_fp!=NULL) esp_log_set_vprintf(&_log_vprintf);	
-
-
+	  
+	  
     Load_general_data_from_NVS();   
 
     if(PARAM_VALUES[pFIRSTRUN]==1)
