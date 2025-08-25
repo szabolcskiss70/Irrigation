@@ -197,6 +197,7 @@ void ota_update_task(void *pvParameter);
 void switch_channel(int ch, T_states status);
 void Save_data_to_NVS();
 void Save_general_data_to_NVS();
+void Erase_NVS();
 
 char MQTT_BLE_answer[2048]="";
 
@@ -993,6 +994,11 @@ bool DEBUG_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 	 remove(LOG_FILE);
 	 append_log(LOG_FILE,"New log%d",1);
 	 strcpy(MQTT_BLE_answer,"LOG erased");
+	}
+	else if (strcmp(ldata,"ERASE NVS")==0)
+	{
+	 Erase_NVS();
+	 strcpy(MQTT_BLE_answer,"NVS erased");
 	}
 	else if ((sscanf(ldata,"LEVEL %d",&log_level)==1) &&  (log_level<=5) &&  (log_level>=0)) 
 	{
@@ -3147,6 +3153,19 @@ void Load_general_data_from_NVS()
 	} 
     nvs_close(nvs_handle);
 }
+
+void Erase_NVS()
+{
+ nvs_handle_t  nvs_handle;
+ if(nvs_open("my_NVS", NVS_READWRITE, &nvs_handle)!=ESP_OK) ESP_LOGI(TAG, "NVS OPEN FAILED");
+ nvs_erase_all(nvs_handle);
+ if(nvs_commit(nvs_handle)!=ESP_OK) ESP_LOGI(TAG, "NVS COMMIT FAILED");; 
+ nvs_close(nvs_handle);
+ ESP_LOGI(TAG, "NVS ERASED");
+}
+
+
+
 
 
 void Save_general_data_to_NVS()
