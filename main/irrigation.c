@@ -1310,6 +1310,15 @@ bool ACS71020_write_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic
 					xSemaphoreGive(I2C_mutex); 
 					my_esp_mqtt_client_publish(mqtt_client, "ACS71020", "shadow + eeprom writen", 0, 0, 0);   //Qos=0; retain=0	
 				    if(!MQTT) sprintf(MQTT_BLE_answer,"%s {%s}", "ACS71020","shadow + eeprom writen"); 
+				}
+				else if (data_addr==0x2F) 
+				{
+					xSemaphoreTake(I2C_mutex, portMAX_DELAY);
+					 write_ACS71020(PARAM_VALUES[pACS71020_ADDRESS], 0x2F, 0x4f70656E); //enter to customer mode
+					 //write_ACS71020(PARAM_VALUES[pACS71020_ADDRESS], data_addr, regValue); 
+					 xSemaphoreGive(I2C_mutex); 
+					my_esp_mqtt_client_publish(mqtt_client, "ACS71020", "access code writen", 0, 0, 0);   //Qos=0; retain=0	
+				    if(!MQTT) sprintf(MQTT_BLE_answer,"%s {%s}", "ACS71020","access code writen"); 
 				}					
 			 }
 
