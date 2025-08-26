@@ -3778,8 +3778,8 @@ void app_main()
     ESP_LOGI(TAG, "Project name:     %s", app_desc->project_name);
     ESP_LOGI(TAG, "App version:      %s", app_desc->version);
 
-    esp_log_level_set("*", ESP_LOG_VERBOSE);
-	esp_log_level_set("DEBUG_TASK", ESP_LOG_VERBOSE);
+    esp_log_level_set("*", ESP_LOG_ERROR);
+	//esp_log_level_set("DEBUG_TASK", ESP_LOG_VERBOSE);
     /*esp_log_level_set("MQTT_CLIENT", ESP_LOG_VERBOSE);
     esp_log_level_set("TRANSPORT_TCP", ESP_LOG_VERBOSE);
     esp_log_level_set("TRANSPORT_SSL", ESP_LOG_VERBOSE);
@@ -3801,9 +3801,7 @@ void app_main()
    if (err!=ESP_OK) ESP_LOGI(TAG, "NVS INIT ERROR %d",err);
 	ESP_ERROR_CHECK(err);   
 
-	
-	  esp_log_level_set("*", ESP_LOG_ERROR);
-	  
+  
 	  Mount_my_Filesystem("user_fs");
 	  remove(LOG_FILE);
 	  append_log(LOG_FILE,"Rebooted\n");

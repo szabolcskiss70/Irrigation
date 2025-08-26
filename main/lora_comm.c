@@ -14,6 +14,7 @@ static SemaphoreHandle_t LORA_RX_TX_mutex;
 static const char *TAG = "LORA";
 uint8_t lora_transmit_buf[256];
 uint8_t lora_receive_buf[256];
+bool lora_comm_initialized=false;
 int INT_result;
 
 extern  int my_esp_mqtt_client_publish(esp_mqtt_client_handle_t client, char* subtopic,const char* message,int par1, int par2, int par3);
@@ -27,13 +28,14 @@ extern char MQTT_BLE_answer[2048];
 
 
 
-void init_lora()
+esp_err_t init_lora()
 {   ESP_LOGI("LORA","Start init lora");
 	    LORA_RX_TX_mutex = xSemaphoreCreateMutex();
 		int sendcount=0;
-		int err=lora_init();
+		esp_err_t err=lora_init();
 		ESP_LOGI("LORA","Init: %d",err);
-		//lora_initialized();
+		if (err!=ESP_OK) return (err);
+		//lora_comm_initialized();
 
 		lora_set_frequency(433775000);
 		lora_set_spreading_factor(12);
@@ -67,6 +69,8 @@ void init_lora()
 		vTaskDelay(2*1000 / portTICK_PERIOD_MS);
 		}
 	 }
+	lora_comm_initialized=true;
+	return (ESP_OK);
 	}	
 
 extern void to_upper(const char *str, char *out_str);
@@ -153,6 +157,7 @@ void task_rx(void *p)
 
 void my_lora_send_packet(uint8_t *buf, int size)
 {
+	if (!lora_comm_initialized) return;
 	xSemaphoreTake(LORA_RX_TX_mutex, portMAX_DELAY);
 	 lora_send_packet(buf, size);
  	xSemaphoreGive(LORA_RX_TX_mutex);
@@ -162,6 +167,7 @@ void my_lora_send_packet(uint8_t *buf, int size)
 int my_lora_packet_rssi()
 {
 	int retval;
+	if (!lora_comm_initialized) return (-200);
 	xSemaphoreTake(LORA_RX_TX_mutex, portMAX_DELAY);
 	 retval=lora_packet_rssi();
  	xSemaphoreGive(LORA_RX_TX_mutex);
