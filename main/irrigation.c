@@ -3779,7 +3779,7 @@ void app_main()
     ESP_LOGI(TAG, "App version:      %s", app_desc->version);
 
     esp_log_level_set("*", ESP_LOG_ERROR);
-	//esp_log_level_set("DEBUG_TASK", ESP_LOG_VERBOSE);
+	esp_log_level_set("DEBUG_TASK", ESP_LOG_VERBOSE);
     /*esp_log_level_set("MQTT_CLIENT", ESP_LOG_VERBOSE);
     esp_log_level_set("TRANSPORT_TCP", ESP_LOG_VERBOSE);
     esp_log_level_set("TRANSPORT_SSL", ESP_LOG_VERBOSE);

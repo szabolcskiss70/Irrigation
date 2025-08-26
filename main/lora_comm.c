@@ -28,13 +28,13 @@ extern char MQTT_BLE_answer[2048];
 
 
 
-esp_err_t init_lora()
+int init_lora()
 {   ESP_LOGI("LORA","Start init lora");
 	    LORA_RX_TX_mutex = xSemaphoreCreateMutex();
 		int sendcount=0;
-		esp_err_t err=lora_init();
+		int err=lora_init();
 		ESP_LOGI("LORA","Init: %d",err);
-		if (err!=ESP_OK) return (err);
+		if (err!=1) return (err);
 		//lora_comm_initialized();
 
 		lora_set_frequency(433775000);
@@ -70,7 +70,7 @@ esp_err_t init_lora()
 		}
 	 }
 	lora_comm_initialized=true;
-	return (ESP_OK);
+	return (1);
 	}	
 
 extern void to_upper(const char *str, char *out_str);
