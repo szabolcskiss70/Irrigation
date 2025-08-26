@@ -130,10 +130,10 @@ int write_ACS71020(int chip_addr, int data_addr, int regValue)
     int len = 4;
 	uint8_t *data = malloc(len + 1);
     data[0] = data_addr;
-	data[1] = regValue/0xffffff;
-	data[2] = regValue/0xffff;
-	data[3] = regValue/0xffff;
-	data[4] = regValue%0xff;
+    data[4] = regValue/0x1000000;
+	data[3] = (regValue%0x1000000)/0x10000;
+	data[2] = (regValue%0x10000)/0x100;
+	data[1] = regValue%0x100;
  
     esp_err_t ret = i2c_master_transmit(dev_handle, data, len + 1, I2C_TOOL_TIMEOUT_VALUE_MS);
 
