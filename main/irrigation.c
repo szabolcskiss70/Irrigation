@@ -1217,7 +1217,7 @@ bool PUMP_PARAM_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][
 				int intval;
 				 if(sscanf(ldata,"%d",&intval)==1) 
 				 {
-					 if ((intval>=10) && (intval<=1200)) 
+					 if ((intval>=1) && (intval<=1200)) 
 					 {
 						 set_flow_rate_protection_limit_dl_per_min(ch,intval);
 						 sprintf(MQTT_BLE_answer,"FLOW_RATE_MIN pump%d: %ddl/min",ch,intval); 
