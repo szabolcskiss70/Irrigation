@@ -3274,6 +3274,15 @@ void Load_data_from_NVS()
 	 sprintf(keyName,"P%1.1d_IMAXmA",ch);
 	 if (nvs_get_u16(nvs_handle, keyName, &uint16val)==ESP_OK)  set_max_current(ch,uint16val/1000);   
 
+     sprintf(keyName,"P%1.1d_Ttrip",ch);
+	 if(nvs_get_u16(nvs_handle, keyName, &uint16val)==ESP_OK) set_T_trip(ch,uint16val);  
+
+	 sprintf(keyName,"P%1.1d_Tres",ch);
+	 if(nvs_set_u16(nvs_handle, keyName,  &uint16val)==ESP_OK) set_T_reset(ch,uint16val); 
+
+	 sprintf(keyName,"P%1.1d_MinFlow",ch);
+	 if(nvs_set_u16(nvs_handle, keyName, &uint16val)==ESP_OK) set_flow_rate_protection_limit_dl_per_min(ch,uint16val); 
+
    }
 
 	for (ch=0;ch<PARAM_VALUES[pCHANNEL_NUM] ;ch++)
@@ -3352,6 +3361,16 @@ void Save_data_to_NVS()
 
 	 sprintf(keyName,"P%1.1d_IMAXmA",ch);
 	 nvs_set_u16(nvs_handle, keyName, (uint16_t)(1000.0*get_max_current(ch)));   
+
+	 sprintf(keyName,"P%1.1d_Ttrip",ch);
+	 nvs_set_u16(nvs_handle, keyName, (uint16_t)((int)get_T_trip(ch)));  
+
+	 sprintf(keyName,"P%1.1d_Tres",ch);
+	 nvs_set_u16(nvs_handle, keyName, (uint16_t)((int)get_T_reset(ch)));  
+
+	 sprintf(keyName,"P%1.1d_MinFlow",ch);
+	 nvs_set_u16(nvs_handle, keyName, (uint16_t)(get_flow_rate_protection_limit_dl_per_min(ch)));
+
 
    }
 
