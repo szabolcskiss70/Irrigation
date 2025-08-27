@@ -1743,18 +1743,18 @@ IRRIGATION/CHANNEL/x/SCHEDULE/? {}   -list all programmed periods\n\
 IRRIGATION/CHANNEL/x/STATISTIC {} -get statistic\n\
 IRRIGATION/CHANNEL/x/PARAM/NAME {new name} -set channel name\n\
 IRRIGATION/CHANNEL/x/PARAM/PUMP {0|1|2} -set assigned pump 2:BOTH\n\
-IRRIGATION/PUMP/+/REQUEST +:PRIO|1|2 {ON|OFF|DISABLE|ENABLE|SET_PRIO|SET_SWITCHBACK|DEL_SWITCHBACK} -switch PUMP ON|OFF\n\
-IRRIGATION/PUMP/? {} -query pump status";
-
+IRRIGATION/PUMP/+/REQUEST +:PRIO|1|2 {ON|OFF|DISABLE|ENABLE|SET_PRIO|SET_SWITCHBACK|DEL_SWITCHBACK} -switch PUMP ON|OFF";
 
 my_esp_mqtt_client_publish(mqtt_client, "MEASURE/commands2", message, 0, 0, 0);   //Qos=0; retain=0				 
 vTaskDelay(1*1000 / portTICK_PERIOD_MS);	
 message="IRRIGATION/PUMP/x/PARAM/RESTART_DELAY {10min} -set pump restart delay\n\
-IRRIGATION/LEVEL/? {} -query water level\n\
-IRRIGATION/TIME/? {} -query TIME\n\
-IRRIGATION/TEMP/? {} -query temperature sensor\n\
-IRRIGATION/MEASURE_MODE {POWER:LEVEL:STACK:CT:LOG:VOLUME:OFF}\n\
-IRRIGATION/RESTART {ESP:WIFI} -force restart of ESP32 or WIFI dongle\n\
+IRRIGATION/VAL/LEVEL {} -query water level\n\
+IRRIGATION/VAL/TIME {} -query TIME\n\
+IRRIGATION/VAL/TEMP {} -query temperature sensor\n\
+IRRIGATION/VAL/PUMP {} -query pump status\n\
+IRRIGATION/CMD/MEAS_MODE {POWER:LEVEL:STACK:CT:LOG:VOLUME:OFF}\n\
+IRRIGATION/CMD/RESTART {ESP:WIFI} -force restart of ESP32 or WIFI dongle\n\
+IRRIGATION/CMD/TO_SLAVE {topic=value} -send topic to other esp32 via LoRa\n\
 IRRIGATION/ACS71020/READ {0xhex_address}\n\
 IRRIGATION/ACS71020/WRITE {0xhex_address=0xhex_value}\n\	
 IRRIGATION/LIST {CHANNELS|LOG|IRR|LORA}";	
@@ -1778,17 +1778,16 @@ CHANNEL/x/SCHEDULE/PERIODx {10:00-12:00 [+++++++] 30 2000} -add new schedule per
 CHANNEL/x/SCHEDULE/? {}   -list all programmed periods\n\
 CHANNEL/x/STATISTIC {} -get statistic\n\
 PUMP/+/REQUEST +:PRIO|1|2 {ON|OFF|DISABLE|ENABLE|SET_PRIO|SET_SWITCHBACK|DEL_SWITCHBACK} -switch PUMP ON|OFF\n\
-PUMP/? {} -query pump status\n\
 pump_restart_delay {10min} -set pump restart delay\n\
-LEVEL/? {} -query water level\n\
-TIME/? {} -query TIME\n\
-TEMP/? {} -query temperature sensor\n\
-MEASURE_MODE {POWER:LEVEL:STACK:CT:LOG:VOLUME:OFF}\n\
-RESTART {ESP:WIFI} -force restart of ESP32 or WIFI dongle\n\
+CMD/LEVEL {} -query water level\n\
+CMD/TIME {} -query TIME\n\
+CMD/TEMP {} -query temperature sensor\n\
+MEAS_MODE {POWER:LEVEL:STACK:CT:LOG:VOLUME:OFF}\n\
+CMD/RESTART {ESP:WIFI} -force restart of ESP32 or WIFI dongle\n\
 ACS71020/READ {0xhex_address} \n\
 ACS71020/WRITE {0xhex_address=0xhex_value}";	
-					sprintf(MQTT_BLE_answer,"%s", message); 
-				 }
+sprintf(MQTT_BLE_answer,"%s", message); 
+ }
 				
 return true;
 }
@@ -3278,10 +3277,10 @@ void Load_data_from_NVS()
 	 if(nvs_get_u16(nvs_handle, keyName, &uint16val)==ESP_OK) set_T_trip(ch,uint16val);  
 
 	 sprintf(keyName,"P%1.1d_Tres",ch);
-	 if(nvs_set_u16(nvs_handle, keyName,  &uint16val)==ESP_OK) set_T_reset(ch,uint16val); 
+	 if(nvs_get_u16(nvs_handle, keyName,  &uint16val)==ESP_OK) set_T_reset(ch,uint16val); 
 
 	 sprintf(keyName,"P%1.1d_MinFlow",ch);
-	 if(nvs_set_u16(nvs_handle, keyName, &uint16val)==ESP_OK) set_flow_rate_protection_limit_dl_per_min(ch,uint16val); 
+	 if(nvs_get_u16(nvs_handle, keyName, &uint16val)==ESP_OK) set_flow_rate_protection_limit_dl_per_min(ch,uint16val); 
 
    }
 
