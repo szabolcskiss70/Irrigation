@@ -175,6 +175,7 @@ void init_pump(int id, int GPIO_PUMP, int GPIO_PROT,int GPIO_CNT,bool prio, bool
   pump[id].daily_pump_flowmeter_counts=0;
   pump[id].prev_daily_pump_flowmeter_counts=0;
   pump[id].prev_daily_pump_flowmeter_counts_flowmeter=0;
+  pump[id].flow_rate_protection_limit_dl_per_min=5;
 	if (GPIO_CNT!=-1) install_pcnt(id);
   if (GPIO_PUMP!=-1) set_DIO_direction(GPIO_PUMP,GPIO_MODE_OUTPUT);
   if (GPIO_PROT!=-1)
