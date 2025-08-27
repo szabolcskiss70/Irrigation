@@ -1094,6 +1094,18 @@ bool FIRMWARE_ROLLBACK_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_to
 				 }
 				 return true;
 }
+
+
+bool FIRMWARE_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
+{
+ if (strcmp(wilcarded_topic[0],"URL")==0) return(FIRMWARE_URL_CB(ltopic, ldata, MQTT, wilcarded_topic));
+ else  if (strcmp(wilcarded_topic[0],"SELECT_URL")==0) return(FIRMWARE_SELECT_URL_CB(ltopic, ldata, MQTT, wilcarded_topic));
+ else  if (strcmp(wilcarded_topic[0],"VERSION")==0) return(FIRMWARE_VERSION_CB(ltopic, ldata, MQTT, wilcarded_topic));
+ else  if (strcmp(wilcarded_topic[0],"ROLLBACK")==0) return(FIRMWARE_ROLLBACK_CB(ltopic, ldata, MQTT, wilcarded_topic));
+ else return true;
+}
+
+
 bool LEVEL___CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 			{
 				get_LEVEL_string(MQTT_BLE_answer);
@@ -1407,6 +1419,15 @@ else {}
 return true;			 		
 }
 
+
+bool ACS71020_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
+{
+ if (strcmp(wilcarded_topic[0],"READ")==0) return (ACS71020_read_CB(ltopic, ldata, MQTT,wilcarded_topic));
+ else  if (strcmp(wilcarded_topic[0],"WRITE")==0) return (ACS71020_write_CB(ltopic, ldata, MQTT,wilcarded_topic));
+ else return true;
+}
+
+
 int get_Channel_from_wildcarded(char wilcarded_topic[5][32])
 {
 	int ch;
@@ -1428,7 +1449,7 @@ bool CHANNEL_schedule_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_top
 		return false;
 	 }
 			if (strstr(ltopic,"/SCHEDULE/?")!=NULL) report_scheduling(ch);	
-			else if (sscanf(wilcarded_topic[0],"PERIOD%d",&period)==1)
+			else if (sscanf(wilcarded_topic[0],"SCHEDULE/PERIOD%d",&period)==1)
 			{
 			 int HH_on,MM_on,HH_off,MM_off;
 			 char weekdays[7];
@@ -1609,6 +1630,68 @@ bool CHANNEL_request_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topi
 			return true;
 }
 
+bool CHANNEL_PARAM_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
+{
+	printf("%s",wilcarded_topic[1]);
+	int ch=get_Channel_from_wildcarded(wilcarded_topic);
+    if (ch==-1) 
+	 {
+		sprintf(MQTT_BLE_answer,"Invalid channel in topic: %s ", ltopic);
+		return false;
+	 }
+
+    if (strcmp(wilcarded_topic[0],"PARAM/NAME")==0)
+	{
+			if ((strlen(ldata)>0) && (strlen(ldata)<=sizeof(channels[ch].Name)-1)) 
+			{
+				strcpy(channels[ch].Name,ldata);
+				Save_data_to_NVS();
+				sprintf(MQTT_BLE_answer,"Channel name (%s) for CH%d saved.}", channels[ch].Name,ch);
+
+			}
+			else sprintf(MQTT_BLE_answer,"Invalid length (1..7) {%s}", ldata);
+	}
+	if (strcmp(wilcarded_topic[0],"PARAM/PUMP")==0)
+	{
+	   int intval;
+	   if ((sscanf(ldata,"%d",&intval)==1) && ((intval>=PUMP1) && (intval<=BOTH))) channels[ch].assigned_pump=intval;
+	}
+	return true;
+}	
+
+bool CHANNEL_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
+{
+ if (strcmp(wilcarded_topic[0],"REQUEST")==0) return (CHANNEL_request_CB(ltopic, ldata,  MQTT, wilcarded_topic));
+ else  if (strcmp(wilcarded_topic[0],"STATISTIC")==0) return (CHANNEL_statistic_CB(ltopic, ldata,  MQTT, wilcarded_topic));
+ else  if (strcmp(wilcarded_topic[0],"TIMES")==0) return (CHANNEL_TIMES_CB(ltopic, ldata,  MQTT, wilcarded_topic));
+ else  if (strncmp(wilcarded_topic[0],"SCHEDULE/PERIOD",15)==0) return (CHANNEL_schedule_CB(ltopic, ldata,  MQTT, wilcarded_topic));
+ else  if (strncmp(wilcarded_topic[0],"PARAM/",6)==0) return (CHANNEL_PARAM_CB(ltopic, ldata,  MQTT, wilcarded_topic));
+ else return true;
+}
+
+bool VAL_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
+{
+ if (strcmp(wilcarded_topic[0],"PUMP")==0) return(PUMP___CB(ltopic,  ldata,  MQTT, wilcarded_topic));	
+ else if (strcmp(wilcarded_topic[0],"LEVEL")==0) return(LEVEL___CB(ltopic,  ldata,  MQTT, wilcarded_topic));
+ else if (strcmp(wilcarded_topic[0],"TIME")==0) return(TIME___CB(ltopic,  ldata,  MQTT, wilcarded_topic));
+ else if (strcmp(wilcarded_topic[0],"TEMP")==0) return(temp___CB(ltopic,  ldata,  MQTT, wilcarded_topic));
+ else if (strcmp(wilcarded_topic[0],"RUN_MODE")==0) return(run_mode___CB(ltopic,  ldata,  MQTT, wilcarded_topic));
+
+
+ else return true;
+
+
+}
+
+bool CMD_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
+{
+ if (strcmp(wilcarded_topic[0],"RESTART")==0) return(restart_CB(ltopic,  ldata,  MQTT, wilcarded_topic));
+ else if (strcmp(wilcarded_topic[0],"MEAS_MODE")==0) return(measure_mode_CB(ltopic,  ldata,  MQTT, wilcarded_topic));
+ else if (strcmp(wilcarded_topic[0],"TO_SLAVE")==0) return(TO_SLAVE_CB(ltopic,  ldata,  MQTT, wilcarded_topic));	
+ else return true;
+}
+
+
 bool LIST_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 {
 	if (strcmp(ldata,"CHANNELS")==0)
@@ -1640,36 +1723,6 @@ bool LIST_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 	return true;
 }
 
-
-
-bool CHANNEL_PARAM_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
-{
-	printf("%s",wilcarded_topic[1]);
-	int ch=get_Channel_from_wildcarded(wilcarded_topic);
-    if (ch==-1) 
-	 {
-		sprintf(MQTT_BLE_answer,"Invalid channel in topic: %s ", ltopic);
-		return false;
-	 }
-
-    if (strcmp(wilcarded_topic[0],"NAME")==0)
-	{
-			if ((strlen(ldata)>0) && (strlen(ldata)<=sizeof(channels[ch].Name)-1)) 
-			{
-				strcpy(channels[ch].Name,ldata);
-				Save_data_to_NVS();
-				sprintf(MQTT_BLE_answer,"Channel name (%s) for CH%d saved.}", channels[ch].Name,ch);
-
-			}
-			else sprintf(MQTT_BLE_answer,"Invalid length (1..7) {%s}", ldata);
-	}
-	if (strcmp(wilcarded_topic[0],"PUMP")==0)
-	{
-	   int intval;
-	   if ((sscanf(ldata,"%d",&intval)==1) && ((intval>=PUMP1) && (intval<=BOTH))) channels[ch].assigned_pump=intval;
-	}
-	return true;
-}	
 
 
 
@@ -1740,8 +1793,12 @@ ACS71020/WRITE {0xhex_address=0xhex_value}";
 return true;
 }
 
-char* subscribe_topics[]=                   {"LIFE" ,"FIRMWARE/URL" ,"FIRMWARE/SELECT_URL" ,"FIRMWARE/VERSION" ,"FIRMWARE/ROLLBACK" ,"CHANNEL/+/REQUEST"      ,"CHANNEL/+/STATISTIC"      ,"CHANNEL/+/SCHEDULE/#"    ,"RESTART" ,"MEASURE_MODE" ,"LEVEL/?" ,"TIME/?"  ,"ACS71020/READ" ,"ACS71020/WRITE" ,"TEMP/?" ,"HELP" ,"PUMP/+/REQUEST" ,"PUMP/?" ,"PARAM" ,"RUN_MODE/?","LIST","CHANNEL/+/PARAM/#","CHANNEL/+/TIMES","DEBUG","PUMP/+/PARAM/#","TO_SLAVE"};
-T_MQTT_Sub_Callback *MQTT_Sub_Callbacks[]=  {LIFE_CB,FIRMWARE_URL_CB,FIRMWARE_SELECT_URL_CB,FIRMWARE_VERSION_CB,FIRMWARE_ROLLBACK_CB,CHANNEL_request_CB,CHANNEL_statistic_CB,CHANNEL_schedule_CB,restart_CB,measure_mode_CB,LEVEL___CB,TIME___CB,ACS71020_read_CB,ACS71020_write_CB,temp___CB,help_CB,PUMP_CB,PUMP___CB,param_CB,run_mode___CB,LIST_CB,CHANNEL_PARAM_CB,CHANNEL_TIMES_CB,DEBUG_CB,PUMP_PARAM_CB,TO_SLAVE_CB}; 
+//char* subscribe_topics[]=                   {"LIFE" ,"FIRMWARE/URL" ,"FIRMWARE/SELECT_URL" ,"FIRMWARE/VERSION" ,"FIRMWARE/ROLLBACK" ,"CHANNEL/+/REQUEST"      ,"CHANNEL/+/STATISTIC"      ,"CHANNEL/+/SCHEDULE/#"    ,"RESTART" ,"MEASURE_MODE" ,"LEVEL/?" ,"TIME/?"  ,"ACS71020/READ" ,"ACS71020/WRITE" ,"TEMP/?" ,"HELP" ,"PUMP/+/REQUEST" ,"PUMP/?" ,"PARAM" ,"RUN_MODE/?","LIST","CHANNEL/+/PARAM/#","CHANNEL/+/TIMES","DEBUG","PUMP/+/PARAM/#","TO_SLAVE"};
+//T_MQTT_Sub_Callback *MQTT_Sub_Callbacks[]=  {LIFE_CB,FIRMWARE_URL_CB,FIRMWARE_SELECT_URL_CB,FIRMWARE_VERSION_CB,FIRMWARE_ROLLBACK_CB,CHANNEL_request_CB,CHANNEL_statistic_CB,CHANNEL_schedule_CB,restart_CB,measure_mode_CB,LEVEL___CB,TIME___CB,ACS71020_read_CB,ACS71020_write_CB,temp___CB,help_CB,PUMP_CB,PUMP___CB,param_CB,run_mode___CB,LIST_CB,CHANNEL_PARAM_CB,CHANNEL_TIMES_CB,DEBUG_CB,PUMP_PARAM_CB,TO_SLAVE_CB}; 
+
+
+char* subscribe_topics[]=                   {"LIFE" ,"FIRMWARE/#","CHANNEL/+/#"     ,"CMD/#" ,"VAL/#" ,"ACS71020/#"  ,"HELP" ,"PUMP/+/REQUEST","PARAM" ,"LIST","DEBUG","PUMP/+/PARAM/#"};
+T_MQTT_Sub_Callback *MQTT_Sub_Callbacks[]=  {LIFE_CB,FIRMWARE_CB,CHANNEL_CB,CMD_CB,VAL_CB,ACS71020_CB,help_CB,PUMP_CB,param_CB,LIST_CB,DEBUG_CB,PUMP_PARAM_CB}; 
 
 
 bool Process_EVENT_DATA(char* ltopic, char* ldata, bool MQTT)
@@ -3765,9 +3822,23 @@ void init_BLE()
 
 void app_main()
 {
-
-	//int center, top, bottom;
-	//char lineChar[20];
+ char wilcarded_topic[5][32];
+ for (int i=0;i<sizeof(subscribe_topics)/4;i++)
+			{
+			    if (is_topic_equal("IRRIGATIONx/CHANNEL/+/SCHEDULE/PERIOD1",subscribe_topics[i],1,wilcarded_topic)) 
+					{
+					ESP_LOGI("TEST","EQ %s",subscribe_topics[i]);
+					for (int j=0;j<5;j++)
+					{
+						ESP_LOGI("TOPICS","%d: %s",j,wilcarded_topic[j]);
+					}
+					}
+					else 
+					{
+						ESP_LOGI("TEST","NEQ");
+					}
+			}
+   
 
 	
 
