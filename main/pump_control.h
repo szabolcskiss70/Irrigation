@@ -13,7 +13,7 @@
 #define YF_DN32_PULSE_PER_LITER	27
 
 typedef enum {PUMP1,PUMP2,BOTH}T_pump_list;
-typedef enum {PROT_T_TRIP,PROT_T_RESET,P_FLOW_PROT,P_DISABLED, P_SUSPENDED,P_DELAY,P_OFF,P_RESUMED,P_ON} T_pump_states;
+typedef enum {PROT_T_TRIP,PROT_T_RESET,P_FLOW_PROT,P_DISABLED, P_UNDERVOLTAGE, P_SUSPENDED,P_DELAY,P_OFF,P_RESUMED,P_ON} T_pump_states;
 
 typedef struct{
 	int ID;
@@ -39,14 +39,22 @@ typedef struct{
     float protection_level_on;
 	int cnt_at_pump_start; //count value at pump start
 	int cnt_at_pump_suspend; //count value at pump suspend
-	pcnt_unit_handle_t pcnt_unit; // flow meter counter handle
     int daily_pump_flowmeter_counts; // daily pump counts
     int prev_daily_pump_flowmeter_counts; //daily pump counts in previous read cycle
 	int prev_daily_pump_flowmeter_counts_flowmeter; ////daily pump counts in previous measure cycle
 	time_t status_change_time[P_ON-P_DISABLED+1]; // timestamps of state changes
 	bool pump_running; // actual pump state
-	TaskHandle_t CurrentMonitoringTaskHAndle;
 	int flow_rate_protection_limit_dl_per_min;
+	pcnt_unit_handle_t pcnt_unit; // flow meter counter handle
+	TaskHandle_t CurrentMonitoringTaskHAndle;
+	int ACS71020_address;
+	bool Auto_switch_on_if_powered;
+	bool remote_pump;
+	struct pump_control
+	{
+	 int test;	
+	};
+	
 } T_pump; 
 
 extern T_pump pump[3];
@@ -55,7 +63,7 @@ extern int pump_num;
 void switch_pump(bool on_state, T_pump_list assigned_pump);
 void switch_pump_ch(int id,bool on_state);
 void enable_pump(int ch,bool enable);
-void init_pump(int id, int GPIO_PUMP, int GPIO_PROT,int GPIO_CNT,bool prio, bool switchbackifresumed);
+void init_pump(int id, int GPIO_PUMP, int GPIO_PROT,int GPIO_CNT,bool prio, bool switchbackifresumed,int ACS71020_address );
 bool isPUMP_disabled_or_suspended();
 T_pump_states check_pump_protection();
 void GetPumpStatusString(int id, char* message, int buf_size);
@@ -85,5 +93,9 @@ float get_T_trip(int id);
 void  set_T_trip(int id, float T_trip);
 float get_T_reset(int id);
 void  set_T_reset(int id, float T_reset);
+bool get_autoSwitchON(int id);
+void set_autoSwitchON(int id, bool val);
+bool get_remotePump(int id);
+void set_remotePump(int id, bool val);
 
 #endif

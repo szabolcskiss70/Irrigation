@@ -92,7 +92,7 @@ T_pump_states get_pump_id_state_array(int id)
 
 T_pump_states get_pump_id_state(int id)
 {
- if (id==0)  return (pump[id].status);
+ if (!get_remotePump(id)) return (pump[id].status);
  return((T_pump_states) getvaluefromslave("get_pump_id_state"));
 }
 
@@ -149,14 +149,16 @@ void switch_pump_id_to_state(int id, T_pump_states new_state)
  }
 }
 
-void init_pump(int id, int GPIO_PUMP, int GPIO_PROT,int GPIO_CNT,bool prio, bool switchbackifavailable)
+void init_pump(int id, int GPIO_PUMP, int GPIO_PROT,int GPIO_CNT,bool prio, bool switchbackifavailable,int ACS71020_address)
 {
   char pump_prot_task_name[32];
 	pump[id].ID=id;
+  pump[id].remote_pump=false;
   pump[id].pump_running=false;
 	pump[id].GPIO_PUMP=GPIO_PUMP;
 	pump[id].GPIO_PROT=GPIO_PROT;
 	pump[id].GPIO_CNT=GPIO_CNT;
+  pump[id].ACS71020_address=ACS71020_address;
   pump[id].max_current=5.0; 
   pump[id].T_trip=150.0; 
   pump[id].T_reset=80.0; 
@@ -176,6 +178,7 @@ void init_pump(int id, int GPIO_PUMP, int GPIO_PROT,int GPIO_CNT,bool prio, bool
   pump[id].prev_daily_pump_flowmeter_counts=0;
   pump[id].prev_daily_pump_flowmeter_counts_flowmeter=0;
   pump[id].flow_rate_protection_limit_dl_per_min=5;
+  pump[id].Auto_switch_on_if_powered=false;
 	if (GPIO_CNT!=-1) install_pcnt(id);
   if (GPIO_PUMP!=-1) set_DIO_direction(GPIO_PUMP,GPIO_MODE_OUTPUT);
   if (GPIO_PROT!=-1)
@@ -445,7 +448,7 @@ void install_pcnt(int id)
     pcnt_glitch_filter_config_t filter_config = {
         .max_glitch_ns = 1000,
     };
-    ESP_ERROR_CHECK(pcnt_unit_set_glitch_filter(pump[id].pcnt_unit, &filter_config));
+    ESP_ERROR_CHECK(pcnt_unit_set_glitch_filter(pump[id].pcnt_unit,&filter_config));
 
     ESP_LOGI(TAG, "install pcnt channels");
     pcnt_chan_config_t chan_a_config = {
@@ -503,6 +506,13 @@ bool getPUMP_prio(int id) {return(pump[id].prio);}
 void setPUMP_prio(int id, bool val) {pump[id].prio=val;pump[other_pump(id)].prio=!val;}
 bool getPUMP_switchbackifavailable(int id) {return(pump[id].switchbackifavailable);}
 void setPUMP_switchbackifavailable(int id, bool val) {pump[id].prio=val;}
+
+bool get_autoSwitchON(int id) {return(pump[id].Auto_switch_on_if_powered);}
+void set_autoSwitchON(int id, bool val) {pump[id].Auto_switch_on_if_powered=val;}
+
+bool get_remotePump(int id) {return(pump[id].remote_pump);}
+void set_remotePump(int id, bool val) {pump[id].remote_pump=val;}
+
 
 float getsinkvolume(int id) {return pump[id].sink_volume;}
 
@@ -606,13 +616,18 @@ void Chek_pump_current_and_flow_rate_task(void *pvParameters)
   if (ACS71020_initialized)
   {
    xSemaphoreTake(I2C_mutex, portMAX_DELAY);
-   double irms= MeasuredValue(ACS71020_address_default, 0x20, 0x7fff0000, 0,16,14,30.0);
-  //double p=    MeasuredValue(ACS71020_address_default, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs);
+   double irms= MeasuredValue(actpump->ACS71020_address, 0x20, 0x7fff0000, 0,16,14,30.0);
+   double urms= MeasuredValue(actpump->ACS71020_address, 0x20, 0x00007fff, 0, 0,15,0.275*(R1_4+Rs)/Rs); 
+  //double p=    MeasuredValue(actpump->ACS71020_address, 0x28, 0x0001ffff,15, 0,15,30.0*0.275*(R1_4+Rs)/Rs);
    xSemaphoreGive(I2C_mutex);
    if (actpump->I_max<irms ) actpump->I_max=irms;
   //ESP_LOGI("DEBUG_TASK", "irms:%lf limit:%f",irms,actpump->max_current);
+   if (urms<180) switch_pump_id_to_state(actpump->ID,P_UNDERVOLTAGE);
+   else if(get_pump_id_state(actpump->ID)==P_UNDERVOLTAGE) switch_pump_id_to_state(actpump->ID,P_DELAY);
+
    if (!motor_protect_func(irms,actpump->T_trip,actpump->T_reset,xFrequency*portTICK_PERIOD_MS,get_pump_id_state(actpump->ID)==P_ON, &pump[actpump->ID].T_max)) switch_pump_id_to_state(actpump->ID,PROT_T_TRIP);
    else if(get_pump_id_state(actpump->ID)==PROT_T_TRIP) switch_pump_id_to_state(actpump->ID,PROT_T_RESET);
+   else if(get_pump_id_state(actpump->ID)==PROT_T_RESET) switch_pump_id_to_state(actpump->ID,P_DELAY);
   }
 
 
@@ -627,6 +642,8 @@ void Chek_pump_current_and_flow_rate_task(void *pvParameters)
       ESP_LOGI("DEBUG_TASK","Too low flow rate"); 
       switch_pump_id_to_state(actpump->ID,P_FLOW_PROT);
     }
+    if(get_pump_id_state(actpump->ID)==P_FLOW_PROT) switch_pump_id_to_state(actpump->ID,P_DELAY);
+
   }
   if  (actpump->GPIO_PROT!=-1)
   {
@@ -649,6 +666,12 @@ void Chek_pump_current_and_flow_rate_task(void *pvParameters)
     }           
     }
   }
+  if (get_autoSwitchON(actpump->ID) && (get_pump_id_state(actpump->ID)==P_RESUMED)) 
+  {
+    vTaskDelay(2000 / portTICK_PERIOD_MS);
+    switch_pump_id_to_state(actpump->ID,P_ON);
+  }
+
 }
 }
 

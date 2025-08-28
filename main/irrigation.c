@@ -1198,6 +1198,10 @@ bool PUMP_PARAM_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][
 		else if (strcmp(wilcarded_topic[0],"SET_PRIO")==0) setPUMP_prio(ch,true);
 		else if (strcmp(wilcarded_topic[0],"SET_SWITCHBACK")==0) setPUMP_switchbackifavailable(ch,true);
 		else if (strcmp(wilcarded_topic[0],"DEL_SWITCHBACK")==0) setPUMP_switchbackifavailable(ch,false);
+		else if (strcmp(wilcarded_topic[0],"SET_AUTO_SWITCH_ON")==0) set_autoSwitchON(ch,true);
+		else if (strcmp(wilcarded_topic[0],"DEL_AUTO_SWITCH_ON")==0) set_autoSwitchON(ch,false);
+		else if (strcmp(wilcarded_topic[0],"SET_REMOTE_PUMP")==0) set_remotePump(ch,true);
+		else if (strcmp(wilcarded_topic[0],"DEL_REMOTE_PUMP")==0) set_remotePump(ch,false);
 		else if (strcmp(wilcarded_topic[0],"RESTART_DELAY")==0)
 		{
 				int intval;
@@ -1269,9 +1273,6 @@ bool PUMP_PARAM_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][
 				 else sprintf(MQTT_BLE_answer,"%s %s", "T_RESET","invalid format!"); 
 		}
         else if (strcmp(wilcarded_topic[0],"SET_DEFAULT")==0) set_pump_default_params(ch); 
-
-
-
 		else 
 		{
 			sprintf(MQTT_BLE_answer,"%s %s", "Invalid parameter",wilcarded_topic[0]);
@@ -3932,9 +3933,9 @@ Save_data_to_NVS();*/
   
 	switch (PARAM_VALUES[pPUMP_NUM] )
 	{ 
-	  case 3: init_pump(2,-1,-1,-1,false,false);	
-	  case 2: init_pump(1,GPIO_OUTPUT_PUMP_2,-1,-1,false,false); 
-	  case 1: init_pump(0,GPIO_OUTPUT_PUMP_1,ISOLATED_INPUT_PUMP_1,ISOLATED_INPUT_2,true,true); 
+	  case 3: init_pump(2,-1,-1,-1,false,false,PARAM_VALUES[pACS71020_ADDRESS]);	
+	  case 2: init_pump(1,GPIO_OUTPUT_PUMP_2,-1,-1,false,false,PARAM_VALUES[pACS71020_ADDRESS]); 
+	  case 1: init_pump(0,GPIO_OUTPUT_PUMP_1,ISOLATED_INPUT_PUMP_1,ISOLATED_INPUT_2,true,true,PARAM_VALUES[pACS71020_ADDRESS]); 
 			  break;
 	  default: break;
 
