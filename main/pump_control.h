@@ -26,6 +26,7 @@ typedef struct{
 	float T_max;
 	float I_max;
 	float last_T;
+	int Flow_CNT_at_err;
 	T_pump_states status; //actual pump status
 	int GPIO_PUMP; //GPIO of pump relay
 	int GPIO_PROT; //gpio of protection imput
@@ -42,7 +43,7 @@ typedef struct{
     int daily_pump_flowmeter_counts; // daily pump counts
     int prev_daily_pump_flowmeter_counts; //daily pump counts in previous read cycle
 	int prev_daily_pump_flowmeter_counts_flowmeter; ////daily pump counts in previous measure cycle
-	time_t status_change_time[P_ON-P_DISABLED+1]; // timestamps of state changes
+	time_t status_change_time[P_ON-PROT_T_TRIP+1]; // timestamps of state changes
 	bool pump_running; // actual pump state
 	int flow_rate_protection_limit_dl_per_min;
 	pcnt_unit_handle_t pcnt_unit; // flow meter counter handle
@@ -50,6 +51,7 @@ typedef struct{
 	int ACS71020_address;
 	bool Auto_switch_on_if_powered;
 	bool remote_pump;
+	bool just_turned_on;
 	struct pump_control
 	{
 	 int test;	

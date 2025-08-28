@@ -142,6 +142,8 @@ void switch_pump_id_to_state(int id, T_pump_states new_state)
  {
   case P_ON:              pump[id].T_max=0;
                           pump[id].I_max=0;
+                          pump[id].Flow_CNT_at_err=0;
+                          pump[id].just_turned_on=true;
                           switch_pump_ch_relay(id,true);	 
                           break;
   default:                switch_pump_ch_relay(id,false);	           
@@ -154,6 +156,7 @@ void init_pump(int id, int GPIO_PUMP, int GPIO_PROT,int GPIO_CNT,bool prio, bool
   char pump_prot_task_name[32];
 	pump[id].ID=id;
   pump[id].remote_pump=false;
+  pump[id].just_turned_on=false;
   pump[id].pump_running=false;
 	pump[id].GPIO_PUMP=GPIO_PUMP;
 	pump[id].GPIO_PROT=GPIO_PROT;
@@ -328,8 +331,8 @@ void GetPumpStatusString(int id, char* message, int buf_size)
 {
  if (pump[id].GPIO_CNT!=-1) pcnt_unit_get_count(pump[id].pcnt_unit, &pump[id].daily_pump_flowmeter_counts);
  else pump[id].daily_pump_flowmeter_counts=0;
- char *MsgFormat= "P%d: Status:%s, Daily Volume:%1.1fl, Tmax:%1.1fC° Imax:%1.1fA Ttrip:%1.1fC° Treset:%1.1fC° FlowRate_min:%ddl/min, restart delay:%dmin\n";
- if (buf_size>strlen(MsgFormat)+16) sprintf(message,MsgFormat,id+1,PUMP_status_str[get_pump_id_state(id)],convertCNT2Liter(pump[id].daily_pump_flowmeter_counts),pump[id].T_max,pump[id].I_max,get_T_trip(id),get_T_reset(id),get_flow_rate_protection_limit_dl_per_min(id),get_restart_delay(id));
+ char *MsgFormat= "P%d: Status:%s, Daily Volume:%1.1fl, Tmax:%1.1fC° Imax:%1.1fA Ttrip:%1.1fC° Treset:%1.1fC° FlowRate_min:%ddl/min, restart delay:%dmin auto_switch_on:%d remote:%d, CNT@low_flow:%d\n";
+ if (buf_size>strlen(MsgFormat)+16) sprintf(message,MsgFormat,id+1,PUMP_status_str[get_pump_id_state(id)],convertCNT2Liter(pump[id].daily_pump_flowmeter_counts),pump[id].T_max,pump[id].I_max,get_T_trip(id),get_T_reset(id),get_flow_rate_protection_limit_dl_per_min(id),get_restart_delay(id),get_autoSwitchON(id),get_remotePump(id),pump[id].Flow_CNT_at_err);
 }
 
 void getpumptimechanges(int id, char* message, int buf_size)
@@ -425,7 +428,8 @@ bool check_flowrate(int pump_id,int looptime_ms)
   
   int limit=pump[pump_id].flow_rate_protection_limit_dl_per_min/10*YF_DN32_PULSE_PER_LITER/60*looptime_ms/1000;
 	ESP_LOGI("DEBUG_TASK", "delta_cnt:%d limit:%d, looptime:%dms",delta_cnt,limit,looptime_ms);
-  return (delta_cnt>limit);
+  if(delta_cnt<limit) pump[pump_id].Flow_CNT_at_err=delta_cnt;
+  return (delta_cnt>=limit);
 }
 
 
@@ -640,7 +644,8 @@ void Chek_pump_current_and_flow_rate_task(void *pvParameters)
     if ((run_cnt%sec==0) && (get_pump_id_state(actpump->ID)==P_ON) && (!check_flowrate(actpump->ID,sec*xFrequency*portTICK_PERIOD_MS))) 
     {
       ESP_LOGI("DEBUG_TASK","Too low flow rate"); 
-      switch_pump_id_to_state(actpump->ID,P_FLOW_PROT);
+      if (actpump->just_turned_on) actpump->just_turned_on=false;
+      else switch_pump_id_to_state(actpump->ID,P_FLOW_PROT);
     }
     if(get_pump_id_state(actpump->ID)==P_FLOW_PROT) switch_pump_id_to_state(actpump->ID,P_DELAY);
 
