@@ -337,7 +337,7 @@ void GetPumpStatusString(int id, char* message, int buf_size)
 
 void getpumptimechanges(int id, char* message, int buf_size)
 {
-			for (int i=P_DISABLED;i<=P_ON;i++)
+			for (int i=PROT_T_TRIP;i<=P_ON;i++)
 			{
 				if (buf_size>64) sprintf(message+strlen(message),"ID:%d %s: %lld\n",id,PUMP_status_str[i],pump[id].status_change_time[i]);
 			}
