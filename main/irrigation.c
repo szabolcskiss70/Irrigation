@@ -1181,7 +1181,7 @@ void set_pump_default_params(int id,char* ldata)
 		setPUMP_switchbackifavailable(id,false);
 		set_restart_delay(id,15);
 		set_flow_rate_protection_limit_dl_per_min(id,50);
-		set_T_trip(id,200);
+		set_T_trip(id,260);
 		set_T_reset(id,20);
 		set_autoSwitchON(id,true);
 	}
