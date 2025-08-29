@@ -4,13 +4,14 @@
 #include "DIO.h"
 #include "ACS71020.h"
 #include "lora_comm.h"
-
+#include "pump_protection.h"
 
 extern SemaphoreHandle_t I2C_mutex;
 
 extern void Write_Msg_toDisplay(int line, char *Msg);
 extern float water_level;
 extern bool ACS71020_initialized;
+
 
 void install_pcnt();
 void Chek_pump_current_and_flow_rate_task(void *pvParameters);
@@ -521,7 +522,12 @@ void set_remotePump(int id, bool val) {pump[id].remote_pump=val;}
 float getsinkvolume(int id) {return pump[id].sink_volume;}
 
 float get_max_current(int id) {return pump[id].max_current;}
-void  set_max_current(int id, float imax) {pump[id].max_current=imax;}
+void  set_max_current(int id, float imax) 
+{
+  pump[id].max_current=imax;
+  pump[id].T_trip=imax*imax*R_eq*R_th*6/5.5; 
+
+}
 
 float get_T_trip(int id) {return pump[id].T_trip;}
 void  set_T_trip(int id, float T_trip) {pump[id].T_trip=T_trip;}

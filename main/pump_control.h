@@ -52,11 +52,6 @@ typedef struct{
 	bool Auto_switch_on_if_powered;
 	bool remote_pump;
 	bool just_turned_on;
-	struct pump_control
-	{
-	 int test;	
-	};
-	
 } T_pump; 
 
 extern T_pump pump[3];

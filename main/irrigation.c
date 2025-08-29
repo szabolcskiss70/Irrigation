@@ -1169,16 +1169,34 @@ bool TO_SLAVE_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32
 	return true;
 }
 
-void set_pump_default_params(int id)
+void set_pump_default_params(int id,char* ldata)
 {
-	enable_pump(id,true);
-	setPUMP_prio(id,false);
-	setPUMP_switchbackifavailable(id,false);
-	set_restart_delay(id,15);
-	set_flow_rate_protection_limit_dl_per_min(id,50);
-	set_T_trip(id,150);
-	set_T_reset(id,20);
-	set_max_current(id,10000);
+	char Master_Slave;
+	if(sscanf(ldata,"%c",&Master_Slave)==1)
+	{ 
+    if (Master_Slave=='S')
+	{
+		enable_pump(id,true);
+		setPUMP_prio(id,false);
+		setPUMP_switchbackifavailable(id,false);
+		set_restart_delay(id,15);
+		set_flow_rate_protection_limit_dl_per_min(id,50);
+		set_T_trip(id,200);
+		set_T_reset(id,20);
+		set_autoSwitchON(id,true);
+	}
+    else if (Master_Slave=='M')
+	{
+		enable_pump(id,true);
+		setPUMP_prio(id,false);
+		setPUMP_switchbackifavailable(id,false);
+		set_restart_delay(id,15);
+		set_flow_rate_protection_limit_dl_per_min(id,5);
+		set_T_trip(id,150);
+		set_T_reset(id,20);
+	}
+	
+ }
 }
 
 bool PUMP_PARAM_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
@@ -1249,7 +1267,7 @@ bool PUMP_PARAM_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][
 				int intval;
 				 if(sscanf(ldata,"%d",&intval)==1) 
 				 {
-					 if ((intval>=0) && (intval<=200)) 
+					 if ((intval>=0) && (intval<=600)) 
 					 {
 						 set_T_trip(ch,intval);   
 						 sprintf(MQTT_BLE_answer,"T_TRIP pump%d: %dC°",ch,intval); 
@@ -1272,7 +1290,7 @@ bool PUMP_PARAM_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][
 				 }
 				 else sprintf(MQTT_BLE_answer,"%s %s", "T_RESET","invalid format!"); 
 		}
-        else if (strcmp(wilcarded_topic[0],"SET_DEFAULT")==0) set_pump_default_params(ch); 
+        else if (strcmp(wilcarded_topic[0],"SET_DEFAULT")==0) set_pump_default_params(ch,ldata); 
 		else 
 		{
 			sprintf(MQTT_BLE_answer,"%s %s", "Invalid parameter",wilcarded_topic[0]);
@@ -3284,6 +3302,12 @@ void Load_data_from_NVS()
 	 sprintf(keyName,"P%1.1d_MinFlow",ch);
 	 if(nvs_get_u16(nvs_handle, keyName, &uint16val)==ESP_OK) set_flow_rate_protection_limit_dl_per_min(ch,uint16val); 
 
+	 sprintf(keyName,"P%1.1d_remote",ch);
+	 if(nvs_get_u16(nvs_handle, keyName,  &uint16val)==ESP_OK) set_remotePump(ch,uint16val); 
+
+	 sprintf(keyName,"P%1.1d_autSWON",ch);
+	 if(nvs_get_u16(nvs_handle, keyName, &uint16val)==ESP_OK) set_autoSwitchON(ch,uint16val); 
+
    }
 
 	for (ch=0;ch<PARAM_VALUES[pCHANNEL_NUM] ;ch++)
@@ -3372,6 +3396,11 @@ void Save_data_to_NVS()
 	 sprintf(keyName,"P%1.1d_MinFlow",ch);
 	 nvs_set_u16(nvs_handle, keyName, (uint16_t)(get_flow_rate_protection_limit_dl_per_min(ch)));
 
+	 sprintf(keyName,"P%1.1d_remote",ch);
+	 nvs_set_u16(nvs_handle, keyName, (uint16_t)((int)get_remotePump(ch)));  
+
+	 sprintf(keyName,"P%1.1d_autSWON",ch);
+	 nvs_set_u16(nvs_handle, keyName, (uint16_t)(get_autoSwitchON(ch)));
 
    }
 
