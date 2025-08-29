@@ -1148,7 +1148,7 @@ bool PUMP_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 		ch--;
 		if(strcmp(ldata,"?")==0); // just query status by GetPumpStatusString
 		else if(strcmp(ldata,"ON")==0) switch_pump_id_to_state(ch,P_ON);	
-		else if(strcmp(ldata,"TIMES")==0) getpumptimechanges(ch,MQTT_BLE_answer+strlen(MQTT_BLE_answer),sizeof(MQTT_BLE_answer)-strlen(MQTT_BLE_answer)-1);
+		else if(strcmp(ldata,"TIMES")==0) {getpumptimechanges(ch,MQTT_BLE_answer+strlen(MQTT_BLE_answer),sizeof(MQTT_BLE_answer)-strlen(MQTT_BLE_answer)-1);return true;}
         else switch_pump_id_to_state(ch,P_OFF);
 		GetPumpStatusString(ch,MQTT_BLE_answer+strlen(MQTT_BLE_answer),sizeof(MQTT_BLE_answer)-strlen(MQTT_BLE_answer)-1);
     }
@@ -3291,7 +3291,7 @@ void Load_data_from_NVS()
 	 if (nvs_get_u8(nvs_handle, keyName, &uint8val)==ESP_OK)  setPUMP_switchbackifavailable(ch,uint8val==1);   
 
 	 sprintf(keyName,"P%1.1d_IMAXmA",ch);
-	 if (nvs_get_u16(nvs_handle, keyName, &uint16val)==ESP_OK)  set_max_current(ch,uint16val/1000);   
+	 if (nvs_get_u16(nvs_handle, keyName, &uint16val)==ESP_OK)  set_max_current(ch,1.0*uint16val/1000);   
 
      sprintf(keyName,"P%1.1d_Ttrip",ch);
 	 if(nvs_get_u16(nvs_handle, keyName, &uint16val)==ESP_OK) set_T_trip(ch,uint16val);  

@@ -13,7 +13,8 @@
 #define YF_DN32_PULSE_PER_LITER	27
 
 typedef enum {PUMP1,PUMP2,BOTH}T_pump_list;
-typedef enum {PROT_T_TRIP,PROT_T_RESET,P_FLOW_PROT,P_DISABLED, P_UNDERVOLTAGE, P_SUSPENDED,P_DELAY,P_OFF,P_RESUMED,P_ON} T_pump_states;
+typedef enum {PROT_T_TRIP,P_FLOW_PROT,P_UNDERVOLTAGE,PROT_T_RESET,P_DISABLED, P_SUSPENDED,P_DELAY,P_OFF,P_RESUMED,P_ON} T_pump_states;
+
 
 typedef struct{
 	int ID;
@@ -52,6 +53,7 @@ typedef struct{
 	bool Auto_switch_on_if_powered;
 	bool remote_pump;
 	bool just_turned_on;
+	int suspend_reason;
 } T_pump; 
 
 extern T_pump pump[3];

@@ -23,7 +23,7 @@ extern bool motor_protect_func(float I,float T_trip,float T_reset,int looptime_m
 #define EXAMPLE_PCNT_LOW_LIMIT -1
 
 T_pump pump[3];
-char* PUMP_status_str[]={"PROT_T_TRIP","PROT_T_RESET","FLOW_PROT","DISABLED","SUSPENDED","DELAY","OFF","RESUMED","ON"};
+char* PUMP_status_str[]={"PROT_T_TRIP","FLOW_PROT","UNDERVOLTAGE","PROT_T_RESET","DISABLED","SUSPENDED","DELAY","OFF","RESUMED","ON"};
 
 static const char *TAG = "pump";
 int pump_num=0;
@@ -139,11 +139,14 @@ void switch_pump_id_to_state(int id, T_pump_states new_state)
 {
  pump[id].status=new_state;
  pump[id].status_change_time[new_state]=now_pump();
+ for (int state=PROT_T_TRIP;state<=P_UNDERVOLTAGE;state++) if(state==new_state) {pump[id].suspend_reason|=(1<<state);break;}
+ 
  switch (new_state)
  {
   case P_ON:              pump[id].T_max=0;
                           pump[id].I_max=0;
-                          pump[id].Flow_CNT_at_err=0;
+                          pump[id].Flow_CNT_at_err=1000;
+                          pump[id].suspend_reason=0;
                           pump[id].just_turned_on=true;
                           switch_pump_ch_relay(id,true);	 
                           break;
@@ -183,6 +186,7 @@ void init_pump(int id, int GPIO_PUMP, int GPIO_PROT,int GPIO_CNT,bool prio, bool
   pump[id].prev_daily_pump_flowmeter_counts_flowmeter=0;
   pump[id].flow_rate_protection_limit_dl_per_min=5;
   pump[id].Auto_switch_on_if_powered=false;
+  pump[id].suspend_reason=0;
 	if (GPIO_CNT!=-1) install_pcnt(id);
   if (GPIO_PUMP!=-1) set_DIO_direction(GPIO_PUMP,GPIO_MODE_OUTPUT);
   if (GPIO_PROT!=-1)
@@ -330,10 +334,13 @@ bool isPUMP_disabled_or_suspended()
 
 void GetPumpStatusString(int id, char* message, int buf_size)
 {
+  char susp_reason_str[64];
+  susp_reason_str[0]=0;
+  for (int state=PROT_T_TRIP;state<=P_UNDERVOLTAGE;state++) if(pump[id].suspend_reason & (1<<state)) {strcat(susp_reason_str," ");strcat(susp_reason_str,PUMP_status_str[state]);} 
  if (pump[id].GPIO_CNT!=-1) pcnt_unit_get_count(pump[id].pcnt_unit, &pump[id].daily_pump_flowmeter_counts);
  else pump[id].daily_pump_flowmeter_counts=0;
- char *MsgFormat= "P%d: Status:%s, Daily Volume:%1.1fl, Tmax:%1.1fC° Imax:%1.1fA Ttrip:%1.1fC° Treset:%1.1fC° FlowRate_min:%ddl/min, restart delay:%dmin auto_switch_on:%d remote:%d, CNT@low_flow:%d\n";
- if (buf_size>strlen(MsgFormat)+16) sprintf(message,MsgFormat,id+1,PUMP_status_str[get_pump_id_state(id)],convertCNT2Liter(pump[id].daily_pump_flowmeter_counts),pump[id].T_max,pump[id].I_max,get_T_trip(id),get_T_reset(id),get_flow_rate_protection_limit_dl_per_min(id),get_restart_delay(id),get_autoSwitchON(id),get_remotePump(id),pump[id].Flow_CNT_at_err);
+ char *MsgFormat= "P%d: Status:%s, Daily Volume:%1.1fl, Tmax:%1.1fC° Imax:%1.1fA Ttrip:%1.1fC° Treset:%1.1fC° FlowRate_min:%ddl/min, restart delay:%dmin auto_switch_on:%d remote:%d, CNT@low_flow:%d susp_res:%s\n";
+ if (buf_size>strlen(MsgFormat)+16) sprintf(message,MsgFormat,id+1,PUMP_status_str[get_pump_id_state(id)],convertCNT2Liter(pump[id].daily_pump_flowmeter_counts),pump[id].T_max,pump[id].I_max,get_T_trip(id),get_T_reset(id),get_flow_rate_protection_limit_dl_per_min(id),get_restart_delay(id),get_autoSwitchON(id),get_remotePump(id),pump[id].Flow_CNT_at_err,susp_reason_str);
 }
 
 void getpumptimechanges(int id, char* message, int buf_size)
@@ -632,7 +639,7 @@ void Chek_pump_current_and_flow_rate_task(void *pvParameters)
    xSemaphoreGive(I2C_mutex);
    if (actpump->I_max<irms ) actpump->I_max=irms;
   //ESP_LOGI("DEBUG_TASK", "irms:%lf limit:%f",irms,actpump->max_current);
-   if (urms<180) switch_pump_id_to_state(actpump->ID,P_UNDERVOLTAGE);
+   if (urms<180) switch_pump_id_to_state(actpump->ID,P_UNDERVOLTAGE); 
    else if(get_pump_id_state(actpump->ID)==P_UNDERVOLTAGE) switch_pump_id_to_state(actpump->ID,P_DELAY);
 
    if (!motor_protect_func(irms,actpump->T_trip,actpump->T_reset,xFrequency*portTICK_PERIOD_MS,get_pump_id_state(actpump->ID)==P_ON, &pump[actpump->ID].T_max)) switch_pump_id_to_state(actpump->ID,PROT_T_TRIP);
