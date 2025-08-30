@@ -1,5 +1,5 @@
-#ifndef LPUMP_PROT_H_  
-#define LPUMP_PROT_H_
+#ifndef PUMP_PROT_H_  
+#define PUMP_PROT_H_
 
 // ---- Modell paraméterek (K karakterisztika illesztve) ----
 static const float R_eq     = 5.5f;     // ohm, ekvivalens ellenállás

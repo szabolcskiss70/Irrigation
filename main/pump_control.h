@@ -4,16 +4,16 @@
 #include <time.h>
 #include "stdbool.h"
 //#include "driver/gpio.h"
-#include "driver/pulse_cnt.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "flow_meter.h"
+#include "pump_states.h"
 
 #define Volume_measure_interval_us 11E6 
-#define YF_DN32_PULSE_PER_LITER	27
 
-typedef enum {PUMP1,PUMP2,BOTH}T_pump_list;
-typedef enum {PROT_T_TRIP,P_FLOW_PROT,P_UNDERVOLTAGE,PROT_T_RESET,P_DISABLED, P_SUSPENDED,P_DELAY,P_OFF,P_RESUMED,P_ON} T_pump_states;
+
+
 
 
 typedef struct{
@@ -57,44 +57,22 @@ typedef struct{
 } T_pump; 
 
 extern T_pump pump[3];
-extern int pump_num;
 
-void switch_pump(bool on_state, T_pump_list assigned_pump);
+
+T_pump_states get_pump_id_state(int id);
+
 void switch_pump_ch(int id,bool on_state);
-void enable_pump(int ch,bool enable);
 void init_pump(int id, int GPIO_PUMP, int GPIO_PROT,int GPIO_CNT,bool prio, bool switchbackifresumed,int ACS71020_address );
-bool isPUMP_disabled_or_suspended();
+
 T_pump_states check_pump_protection();
-void GetPumpStatusString(int id, char* message, int buf_size);
-void getpumptimechanges(int id, char* message, int buf_size);
+
 void set_restart_delay(int ch, int restart_delay);
-void get_LEVEL_string(char* result_string);
-int measure_flowrate();
-void GetVolumeString(char *result_string);
+void get_LEVEL_string_for_id(int id,char* result_string);
+void GetVolumeStringfor_pump(int id,char* result_string);
 bool isPUMP_disabled(int id);
-bool isPUMP_disabled_local(int id);
 bool isPUMP_available(int id);
-bool getPUMP_prio(int id);
-void setPUMP_prio(int id, bool val);
-bool getPUMP_switchbackifavailable(int id);
-void setPUMP_switchbackifavailable(int id, bool val);
-void set_restart_delay(int id, int restart_delay);
-int get_restart_delay(int id);
 void switch_pump_id_to_state(int id, T_pump_states new_state);
-int getsinktime(int id);
-int getfilltime(int id);
-float getsinkvolume(int id);
-float get_max_current(int id);
-void  set_max_current(int id, float imax);
-void  set_flow_rate_protection_limit_dl_per_min(int id, int flow_min_dlper_min);
-int   get_flow_rate_protection_limit_dl_per_min(int id);
-float get_T_trip(int id);
-void  set_T_trip(int id, float T_trip);
-float get_T_reset(int id);
-void  set_T_reset(int id, float T_reset);
-bool get_autoSwitchON(int id);
-void set_autoSwitchON(int id, bool val);
-bool get_remotePump(int id);
-void set_remotePump(int id, bool val);
+int measure_flowrate_on_local_pump(int pump_ID);
+
 
 #endif

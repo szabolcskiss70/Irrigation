@@ -24,6 +24,18 @@
     "chrono": "c",
     "fstream": "c",
     "cstdio": "c",
-    "task.h": "c"
+    "task.h": "c",
+    "*.inc": "c",
+    "charconv": "c",
+    "ctime": "c",
+    "format": "c",
+    "future": "c",
+    "iomanip": "c",
+    "limits": "c",
+    "numeric": "c",
+    "ratio": "c",
+    "streambuf": "c",
+    "tuple": "c",
+    "type_traits": "c"
   }
 }

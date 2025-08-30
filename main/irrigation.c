@@ -78,8 +78,9 @@
 
 
 
-
-#include "pump_control.h"
+#include  "flow_meter.h"
+#include "pump_switching.h"
+#include "pump_params.h"
 #include "DIO.h"
 #include "log2file.h"
 
@@ -1147,9 +1148,9 @@ bool PUMP_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 	{
 		ch--;
 		if(strcmp(ldata,"?")==0); // just query status by GetPumpStatusString
-		else if(strcmp(ldata,"ON")==0) switch_pump_id_to_state(ch,P_ON);	
+		else if(strcmp(ldata,"ON")==0) force_switch_pump_id_to_state(ch,P_ON);	
 		else if(strcmp(ldata,"TIMES")==0) {getpumptimechanges(ch,MQTT_BLE_answer+strlen(MQTT_BLE_answer),sizeof(MQTT_BLE_answer)-strlen(MQTT_BLE_answer)-1);return true;}
-        else switch_pump_id_to_state(ch,P_OFF);
+        else force_switch_pump_id_to_state(ch,P_OFF);
 		GetPumpStatusString(ch,MQTT_BLE_answer+strlen(MQTT_BLE_answer),sizeof(MQTT_BLE_answer)-strlen(MQTT_BLE_answer)-1);
     }
     return true;
@@ -1169,35 +1170,6 @@ bool TO_SLAVE_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32
 	return true;
 }
 
-void set_pump_default_params(int id,char* ldata)
-{
-	char Master_Slave;
-	if(sscanf(ldata,"%c",&Master_Slave)==1)
-	{ 
-    if (Master_Slave=='S')
-	{
-		enable_pump(id,true);
-		setPUMP_prio(id,false);
-		setPUMP_switchbackifavailable(id,false);
-		set_restart_delay(id,15);
-		set_flow_rate_protection_limit_dl_per_min(id,50);
-		set_T_trip(id,260);
-		set_T_reset(id,20);
-		set_autoSwitchON(id,true);
-	}
-    else if (Master_Slave=='M')
-	{
-		enable_pump(id,true);
-		setPUMP_prio(id,false);
-		setPUMP_switchbackifavailable(id,false);
-		set_restart_delay(id,15);
-		set_flow_rate_protection_limit_dl_per_min(id,5);
-		set_T_trip(id,150);
-		set_T_reset(id,20);
-	}
-	
- }
-}
 
 bool PUMP_PARAM_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 {
@@ -3963,15 +3935,15 @@ Save_data_to_NVS();*/
   
 	switch (PARAM_VALUES[pPUMP_NUM] )
 	{ 
-	  case 3: init_pump(2,-1,-1,-1,false,false,PARAM_VALUES[pACS71020_ADDRESS]);	
-	  case 2: init_pump(1,GPIO_OUTPUT_PUMP_2,-1,-1,false,false,PARAM_VALUES[pACS71020_ADDRESS]); 
-	  case 1: init_pump(0,GPIO_OUTPUT_PUMP_1,ISOLATED_INPUT_PUMP_1,ISOLATED_INPUT_2,true,true,PARAM_VALUES[pACS71020_ADDRESS]); 
+	  case 3: init_single_pump(2,-1,-1,-1,false,false,PARAM_VALUES[pACS71020_ADDRESS]);	
+	  case 2: init_single_pump(1,GPIO_OUTPUT_PUMP_2,-1,-1,false,false,PARAM_VALUES[pACS71020_ADDRESS]); 
+	  case 1: init_single_pump(0,GPIO_OUTPUT_PUMP_1,ISOLATED_INPUT_PUMP_1,ISOLATED_INPUT_2,true,true,PARAM_VALUES[pACS71020_ADDRESS]); 
 			  break;
 	  default: break;
 
 	}
 
-
+    init_pump_switching();
 
 	switch (PARAM_VALUES[pCHANNEL_NUM] )
 	{
