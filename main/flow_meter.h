@@ -10,6 +10,6 @@
 #define EXAMPLE_PCNT_LOW_LIMIT -1
 
 void install_pcnt(int id,pcnt_unit_handle_t *pcnt_unit,int GPIO_CNT);
-
+void get_CNT_from_flowmeter(pcnt_unit_handle_t pcnt_unit,int *CNT);
 
 #endif

@@ -153,7 +153,7 @@ bool ACS71020_initialized=false;
 #define BROKER_URL "mqtt://szabolcskiss.ddns.net:1883"
 char maintopic[16]="IRRIGATIONx";
 #define MAX_CHANNEL_NUM 3
-#define MAX_PUMP_NUM 3
+#define MAX_PUMP_NUM 2
 #define PERIODS 10
 
 const esp_app_desc_t *app_desc;
@@ -165,7 +165,7 @@ typedef enum {STARTED,RESUMED,INIT,ENABLED,DISABLED,SUSPENDED,DELAY,FINISHED,END
 char* str_states[NOREQUEST-STARTED+1]={"STARTED","RESUMED","INIT","ENABLED","DISABLED","SUSPENDED","DELAY","FINISHED","END","IDLE","REBOOTED","NOREQUEST"};
 char* str_short_states[NOREQUEST-STARTED+1]={"START","RES","INIT","ENAB","DIS","SUSP","DELAY","FIN","END","IDLE","REBO","NO_REQ"};
 typedef enum {OFF,LEVEL,POWER,CT,STACK,LOG,VOLUME,DEBUG} T_measure_mode;
-typedef enum {USE_BLE,USE_WIFI,USE_ACS71020,MAIN_TASK,HANDLE_SCHEDULED,MOTOR_CURRENT_PROT,TEMPSENSOR,CURRENTSENSOR,MEASURE_LEVEL,MEASURE_POWER,POWERMETER_TASK,USE_LORA} T_run_mode_bits;
+typedef enum {USE_BLE,USE_WIFI,USE_ACS71020,MAIN_TASK,HANDLE_SCHEDULED,MOTOR_CURRENT_PROT,TEMPSENSOR,CURRENTSENSOR,MEASURE_LEVEL,MEASURE_POWER,POWERMETER_TASK,USE_LORA,CLONE_TASK,LAST_MODE} T_run_mode_bits;
 //int PARAM_VALUES[pRUN_MODE] =(1<<USE_BLE) | (1<<USE_WIFI);
 bool USE_MCP=false;
 
@@ -173,7 +173,7 @@ typedef enum {pRUN_MODE,pPUMP_NUM,pCHANNEL_NUM,pACS71020_ADDRESS,pSLAVE_RELAY,pF
 char * PARAM_NAMES[pLAST-pRUN_MODE]={"RUN_MODE","PUMP_NUM","CHANNEL_NUM","ACS71020_ADDR","SLAVE_RELAY","FIRSTRUN"};
 int  PARAM_VALUES[pLAST-pRUN_MODE]={3,1,3,ACS71020_address_default,-1,1};
 int PARAM_LL[pLAST-pRUN_MODE]={3,0,0,ACS71020_address_min,-1,0};
-int PARAM_UL[pLAST-pRUN_MODE]={(1<<(USE_LORA+1))-1,MAX_PUMP_NUM,MAX_CHANNEL_NUM,ACS71020_address_max,1,1};
+int PARAM_UL[pLAST-pRUN_MODE]={(1<<(LAST_MODE))-1,MAX_PUMP_NUM,MAX_CHANNEL_NUM,ACS71020_address_max,1,1};
 
 //PARAM_VALUES[pACS71020_ADDRESS]
 
@@ -1133,10 +1133,21 @@ bool PUMP___CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
  }
  return true;
 }
+
+void switch_pump(bool on_state, T_pump_list assigned_pump)
+{
+  T_pump_switching_request pump_switching_request;
+  pump_switching_request.state=on_state;
+  pump_switching_request.assigned_pump=assigned_pump;
+  xQueueSend(pump_request_queue, &pump_switching_request, NULL);
+}
+
+
 bool PUMP_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 {
 	ESP_LOGI("PUMP","Callback: topic:%s\n ldata:%s \n wilcarded:%s",ltopic,ldata,wilcarded_topic[1]);
     int ch;
+	MQTT_BLE_answer[0]=0;
     if (strcmp(wilcarded_topic[1],"PRIO")==0)
 	{
  
@@ -1144,13 +1155,14 @@ bool PUMP_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
                  else switch_pump(false,BOTH);
 				 PUMP___CB(ltopic,  ldata,  MQTT,wilcarded_topic);
 	}
+	else if (strcmp(wilcarded_topic[1],"3")==0) GetPumpStatusString(2,MQTT_BLE_answer+strlen(MQTT_BLE_answer),sizeof(MQTT_BLE_answer)-strlen(MQTT_BLE_answer)-1);
     else if ((strlen(wilcarded_topic[1])==1) && (sscanf(wilcarded_topic[1],"%d",&ch)==1) && (ch>=1) && (ch<=2))
 	{
 		ch--;
 		if(strcmp(ldata,"?")==0); // just query status by GetPumpStatusString
-		else if(strcmp(ldata,"ON")==0) force_switch_pump_id_to_state(ch,P_ON);	
+		else if(strcmp(ldata,"ON")==0) gen_switch_pump_id_to_state(ch,P_ON);	
 		else if(strcmp(ldata,"TIMES")==0) {getpumptimechanges(ch,MQTT_BLE_answer+strlen(MQTT_BLE_answer),sizeof(MQTT_BLE_answer)-strlen(MQTT_BLE_answer)-1);return true;}
-        else force_switch_pump_id_to_state(ch,P_OFF);
+        else gen_switch_pump_id_to_state(ch,P_OFF);
 		GetPumpStatusString(ch,MQTT_BLE_answer+strlen(MQTT_BLE_answer),sizeof(MQTT_BLE_answer)-strlen(MQTT_BLE_answer)-1);
     }
     return true;
@@ -1566,8 +1578,10 @@ bool param_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 				     if ((intval>=PARAM_LL[i]) && (intval<=PARAM_UL[i])) 
 					 {
 						 PARAM_VALUES[i]=intval;
+						 if (i==pRUN_MODE)  PARAM_VALUES[i] |= (1<<USE_BLE) | (1<<USE_WIFI);
+
 				         sprintf(MQTT_BLE_answer,"%s {%d}", PARAM_NAMES[i],PARAM_VALUES[i]); 
-						 if (strcmp(PARAM_NAMES[i],"SLAVE_RELAY")==0)
+						 if (i==pSLAVE_RELAY)
 						 {
 						     //set_DIO_direction(SLAVE_RELAY,GPIO_MODE_OUTPUT);
     						 writeDO(SLAVE_RELAY, (intval==1)?1:0);
@@ -2144,76 +2158,8 @@ static void event_handler(void* arg, esp_event_base_t event_base,
 		wifi_retry_count=0;
 		xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
 		
-    }/* else if (event_base == SC_EVENT && event_id == SC_EVENT_SCAN_DONE) {
-        ESP_LOGI(TAG, "Scan done");
-		Write_Msg_toDisplay(0,"Scan done");
-    } else if (event_base == SC_EVENT && event_id == SC_EVENT_FOUND_CHANNEL) {
-        ESP_LOGI(TAG, "Found channel");
-		Write_Msg_toDisplay(0,"Found channel");
-    } else if (event_base == SC_EVENT && event_id == SC_EVENT_GOT_SSID_PSWD) {
-        ESP_LOGI(TAG, "Got SSID and password");
-		Write_Msg_toDisplay(0,"Got SSID and password:");
-        smartconfig_event_got_ssid_pswd_t *evt = (smartconfig_event_got_ssid_pswd_t *)event_data;
-        wifi_config_t wifi_config;
-        uint8_t ssid[33] = { 0 };
-        uint8_t password[65] = { 0 };
-
-        bzero(&wifi_config, sizeof(wifi_config_t));
-        memcpy(wifi_config.sta.ssid, evt->ssid, sizeof(wifi_config.sta.ssid));
-        memcpy(wifi_config.sta.password, evt->password, sizeof(wifi_config.sta.password));
-        wifi_config.sta.bssid_set = evt->bssid_set;
-        if (wifi_config.sta.bssid_set == true) {
-            memcpy(wifi_config.sta.bssid, evt->bssid, sizeof(wifi_config.sta.bssid));
-        }
-
-        memcpy(ssid, evt->ssid, sizeof(evt->ssid));
-        memcpy(password, evt->password, sizeof(evt->password));
-        ESP_LOGI(TAG, "SSID:%s",(char*)ssid);
-        ESP_LOGI(TAG, "PASSWORD:%s",(char*)password);
-		Write_Msg_toDisplay(1,(char*)ssid);
-		Write_Msg_toDisplay(2,(char*)password);
-		vTaskDelay(3*1000 / portTICK_PERIOD_MS);
-        ESP_ERROR_CHECK( esp_wifi_disconnect() );
-        ESP_ERROR_CHECK( esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config) );
-		ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_FLASH)); 
-        ESP_ERROR_CHECK( esp_wifi_connect() );
-    } else if (event_base == SC_EVENT && event_id == SC_EVENT_SEND_ACK_DONE) {
-        xEventGroupSetBits(s_wifi_event_group, ESPTOUCH_DONE_BIT);
-    }*/
-}
-/*
-static void initialise_wifi(void)
-{
-	ESP_LOGI(TAG, "initialise_wifi");
-	EventBits_t uxBits;
-    const TickType_t xTicksToWait = 300000 / portTICK_PERIOD_MS;
-    esp_netif_init();
-    s_wifi_event_group = xEventGroupCreate();
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK( esp_wifi_init(&cfg) );
-
-    ESP_ERROR_CHECK( esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &event_handler, NULL) );
-    ESP_ERROR_CHECK( esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &event_handler, NULL) );
-    ESP_ERROR_CHECK( esp_event_handler_register(SC_EVENT, ESP_EVENT_ANY_ID, &event_handler, NULL) );
-
-    ESP_ERROR_CHECK( esp_wifi_set_mode(WIFI_MODE_STA) );
-    ESP_ERROR_CHECK( esp_wifi_start() );
-	
-	uxBits = xEventGroupWaitBits(s_wifi_event_group, WIFI_CONNECTED_BIT, false, false, xTicksToWait); 
-    if(uxBits & WIFI_CONNECTED_BIT) {
-            ESP_LOGI(TAG, "WiFi Connected to ap");
     }
-	else{
-		//timeout
-		 ESP_LOGI(TAG, "WiFi timeout");
-		 reboot_WIFI_STICK();
-		 ESP_LOGI(TAG, "ESP restart");
-		 esp_restart();
-	}
-	
-}*/
+}
 
  wifi_config_t wifi_config;
 void initialise_wifi(void)
@@ -2232,10 +2178,8 @@ void initialise_wifi(void)
 
     esp_event_handler_instance_t instance_any_id;
     esp_event_handler_instance_t instance_got_ip;
-//	esp_event_handler_instance_t instance_scan;
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,ESP_EVENT_ANY_ID, &event_handler,NULL,&instance_any_id));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,IP_EVENT_STA_GOT_IP,&event_handler,NULL,&instance_got_ip));
-//	ESP_ERROR_CHECK(esp_event_handler_instance_register(SC_EVENT, ESP_EVENT_ANY_ID,  &event_handler,NULL,&instance_scan));													
 
 
 /*
@@ -3657,7 +3601,7 @@ static int device_write(uint16_t conn_handle, uint16_t attr_handle, struct ble_g
 
     if (sscanf(strdata, "RUN_MODE=%d",&intvalue)==1)
     {
-	   PARAM_VALUES[pRUN_MODE] =intvalue;	
+	   PARAM_VALUES[pRUN_MODE] =intvalue  | (1<<USE_BLE);
 	  /* if (mqtt_connected) 
 			{
 				esp_mqtt_client_stop(mqtt_client);
@@ -3840,29 +3784,10 @@ void init_BLE()
 
 
 
-
+//#include "pump_control.h"
 void app_main()
 {
- char wilcarded_topic[5][32];
- for (int i=0;i<sizeof(subscribe_topics)/4;i++)
-			{
-			    if (is_topic_equal("IRRIGATIONx/CHANNEL/+/SCHEDULE/PERIOD1",subscribe_topics[i],1,wilcarded_topic)) 
-					{
-					ESP_LOGI("TEST","EQ %s",subscribe_topics[i]);
-					for (int j=0;j<5;j++)
-					{
-						ESP_LOGI("TOPICS","%d: %s",j,wilcarded_topic[j]);
-					}
-					}
-					else 
-					{
-						ESP_LOGI("TEST","NEQ");
-					}
-			}
-   
-
-	
-
+	//ESP_LOGI("TEST","size:%d",sizeof(pump[2]));
 	app_desc = esp_app_get_description();
 	ESP_LOGI(TAG, "[APP] Startup..");
     ESP_LOGI(TAG, "[APP] Free memory: %lu bytes", esp_get_free_heap_size());
@@ -3935,7 +3860,6 @@ Save_data_to_NVS();*/
   
 	switch (PARAM_VALUES[pPUMP_NUM] )
 	{ 
-	  case 3: init_single_pump(2,-1,-1,-1,false,false,PARAM_VALUES[pACS71020_ADDRESS]);	
 	  case 2: init_single_pump(1,GPIO_OUTPUT_PUMP_2,-1,-1,false,false,PARAM_VALUES[pACS71020_ADDRESS]); 
 	  case 1: init_single_pump(0,GPIO_OUTPUT_PUMP_1,ISOLATED_INPUT_PUMP_1,ISOLATED_INPUT_2,true,true,PARAM_VALUES[pACS71020_ADDRESS]); 
 			  break;
@@ -3943,7 +3867,7 @@ Save_data_to_NVS();*/
 
 	}
 
-    init_pump_switching();
+    init_pump_switching((PARAM_VALUES[pRUN_MODE]  & (1<<CLONE_TASK)));
 
 	switch (PARAM_VALUES[pCHANNEL_NUM] )
 	{

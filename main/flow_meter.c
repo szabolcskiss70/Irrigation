@@ -53,3 +53,7 @@ void install_pcnt(int id,pcnt_unit_handle_t *pcnt_unit,int GPIO_CNT)
     ESP_ERROR_CHECK(pcnt_unit_start(*pcnt_unit));
 }
 
+void  get_CNT_from_flowmeter(pcnt_unit_handle_t pcnt_unit,int *CNT)
+{
+   pcnt_unit_get_count(pcnt_unit, CNT);
+}

@@ -13,11 +13,9 @@
 #define Volume_measure_interval_us 11E6 
 
 
-
-
-
 typedef struct{
 	int ID;
+	T_pump_states status; //actual pump status
 	int pump_restart_delay; //minimum time for pump restart from pump OFF
 	bool prio; //priority of pump
 	bool switchbackifavailable; // cwitch back to prio pump if possible
@@ -28,11 +26,7 @@ typedef struct{
 	float I_max;
 	float last_T;
 	int Flow_CNT_at_err;
-	T_pump_states status; //actual pump status
-	int GPIO_PUMP; //GPIO of pump relay
-	int GPIO_PROT; //gpio of protection imput
-	int GPIO_CNT;  //gpio of flow meter
-    time_t sink_time; //sink time from pump start to suspended state
+	time_t sink_time; //sink time from pump start to suspended state
 	float sink_volume;
     time_t fill_time; //time from suspended to protection OFF
 	time_t last_pump_on_time; //timestamp of last pump switch ON
@@ -44,20 +38,29 @@ typedef struct{
     int daily_pump_flowmeter_counts; // daily pump counts
     int prev_daily_pump_flowmeter_counts; //daily pump counts in previous read cycle
 	int prev_daily_pump_flowmeter_counts_flowmeter; ////daily pump counts in previous measure cycle
-	time_t status_change_time[P_ON-PROT_T_TRIP+1]; // timestamps of state changes
 	bool pump_running; // actual pump state
 	int flow_rate_protection_limit_dl_per_min;
-	pcnt_unit_handle_t pcnt_unit; // flow meter counter handle
-	TaskHandle_t CurrentMonitoringTaskHAndle;
-	int ACS71020_address;
 	bool Auto_switch_on_if_powered;
 	bool remote_pump;
 	bool just_turned_on;
 	int suspend_reason;
+
+	int GPIO_PUMP; //GPIO of pump relay
+	int GPIO_PROT; //gpio of protection imput
+	int GPIO_CNT;  //gpio of flow meter	
+	int ACS71020_address;
+	TaskHandle_t CurrentMonitoringTaskHAndle;
+	pcnt_unit_handle_t pcnt_unit; // flow meter counter handle
 } T_pump; 
 
-extern T_pump pump[3];
 
+typedef struct
+{
+ time_t status_change_time[P_ON-P_UNKNOWN+1]; // timestamps of state changes
+}T_pump_status_changes;
+
+extern T_pump pump[3];
+extern T_pump_status_changes pump_status_changes[3];
 
 T_pump_states get_pump_id_state(int id);
 

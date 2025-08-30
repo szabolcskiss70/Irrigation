@@ -3,6 +3,8 @@
 #include "lora_comm.h"
 #include <string.h>
 
+
+QueueHandle_t pump_request_queue;
 T_active_pump_suspended active_pump_suspended=NO; 
 int running_pump_ID=-1;
 int pump_num=0;
@@ -13,31 +15,62 @@ bool is_low_prio_pump_running()
 {
  if (pump_num<2) return false;
  if (running_pump_ID==-1) return false;
- return (pump[running_pump_ID].prio?false:true);
+ return (getPUMP_prio(running_pump_ID)?false:true);
+}
+
+int sendcommandtoslave(char* msg)
+{
+ if (lora_comm_initialized)
+	{	
+   uint8_t lora_transmit_buf[256];
+ 	 sprintf((char*)lora_transmit_buf,"IRRMCMD_%lu_%s",xTaskGetTickCount(),msg); 
+	 my_lora_send_packet(lora_transmit_buf,strlen((char*)lora_transmit_buf)); 
+   // (xQueueReceive(lora_ans_evt_queue, &retval, 5*1000/portTICK_PERIOD_MS )==pdPASS)    return (retval); //portMAX_DELAY
+   //else return (-1);
+   return 1;
+	}
+  else return (-1);
+}
+
+void gen_switch_pump_id_to_state(int id, T_pump_states new_state)
+{
+  if (!get_remotePump(id)) switch_pump_id_to_state(id,new_state);
+  else
+  {
+   if (get_autoSwitchON(id)) switch_pump_id_to_state(id,new_state); //switch local relay to power up
+   {
+    //send command via LoRa
+    char cmd[256];
+    sprintf(cmd,"switch_pump_id_to_state:%d",(int)new_state);
+    sendcommandtoslave(cmd);
+   }
+  }
 }
 
 
-void switch_pump(bool on_state, T_pump_list assigned_pump)
+
+
+void process_pump_request(T_pump_switching_request pump_switching_request)
 {
  int pump2switch; 
- switch (assigned_pump)
+ switch (pump_switching_request.assigned_pump)
  {            
    case BOTH:
                 if (running_pump_ID>-1) pump2switch=running_pump_ID;	 
                 else
                 {
                   int higher_prio_pump=0;
-                  if ((pump_num==2) && (pump[1].prio)) higher_prio_pump=1;
+                  if ((pump_num==2) && (getPUMP_prio(1))) higher_prio_pump=1;
                   pump2switch=higher_prio_pump;
-                  if ((pump[higher_prio_pump].status==P_DISABLED) || (pump[higher_prio_pump].status==P_SUSPENDED))
+                  if ((get_pump_id_state(higher_prio_pump)==P_DISABLED) || (get_pump_id_state(higher_prio_pump)==P_SUSPENDED))
                   pump2switch=(higher_prio_pump==1)?0:1;
                  }
                  break;
-   default:     pump2switch=assigned_pump;
+   default:     pump2switch=pump_switching_request.assigned_pump;
                 break;              
  }
 
- switch_pump_id_to_state(pump2switch,on_state?P_ON:P_OFF);
+ gen_switch_pump_id_to_state(pump2switch,pump_switching_request.state?P_ON:P_OFF);
 }
 
 
@@ -52,39 +85,47 @@ static void pump_switching_task(void* pvParameters)
 {
  while (true)
  {
+  T_pump_switching_request  request;
+  if (xQueueReceive(pump_request_queue, &request, 0 )==pdPASS)  process_pump_request(request);
+     
   if (active_pump_suspended!=NO) 
   {
     if (isPUMP_available(other_pump(active_pump_suspended))) 
     {
-    switch_pump_id_to_state(other_pump(active_pump_suspended),P_ON); //switch to an other pump
+    gen_switch_pump_id_to_state(other_pump(active_pump_suspended),P_ON); //switch to an other pump
     active_pump_suspended=NO;
     }
   }
-  if (is_low_prio_pump_running())
+  /*if (is_low_prio_pump_running())
   {
-    if ((pump[other_pump(running_pump_ID)].switchbackifavailable) && (now_pump()-pump[running_pump_ID].last_pump_on_time)>pump[other_pump(running_pump_ID)].pump_restart_delay)
+    if (getPUMP_switchbackifavailable(other_pump(running_pump_ID)) && (now_pump()-pump[running_pump_ID].last_pump_on_time)>get_restart_delay(other_pump(running_pump_ID)))
       if (isPUMP_available(other_pump(running_pump_ID))) 
       {
         int other_pump_ID=other_pump(running_pump_ID);
-        switch_pump_id_to_state(running_pump_ID,P_OFF);
-        switch_pump_id_to_state(other_pump_ID,P_ON);
+        gen_switch_pump_id_to_state(running_pump_ID,P_OFF);
+        gen_switch_pump_id_to_state(other_pump_ID,P_ON);
       }
-  }
+  }*/
   vTaskDelay(1*1000 / portTICK_PERIOD_MS);
  }
 }
 
-int getvaluefromslave(char* msg)
+int getINTvaluefromslave(char* msg)
 {
- uint8_t lora_transmit_buf[256];
-	//if (run_mode & (1<<USE_LORA))
+ if (lora_comm_initialized)
 	{	
+   uint8_t lora_transmit_buf[256];
+   int retval; 
  	 sprintf((char*)lora_transmit_buf,"IRRMGETI_%lu_%s",xTaskGetTickCount(),msg); 
 	 my_lora_send_packet(lora_transmit_buf,strlen((char*)lora_transmit_buf)); 
-   //wait4notify
-   return (INT_result);
+   if (xQueueReceive(lora_ans_evt_queue, &retval, 5*1000/portTICK_PERIOD_MS )==pdPASS)    return (retval); //portMAX_DELAY
+   else return (-1);
 	}
+  else return (-1);
 }
+
+
+
 
 void getpumpbufferfromslave()
 {
@@ -152,13 +193,14 @@ void set_pump_default_params(int id,char* ldata)
  }
 }
 
-void init_pump_switching()
+void init_pump_switching(int run_cloning)
 {
+  pump_request_queue = xQueueCreate(10, sizeof(T_pump_switching_request));
   xTaskCreate(&pump_switching_task, "pump_switching_task", 4096, NULL, 5, NULL);
-  xTaskCreate(&pump_cloning_task, "pump_cloning_task", 4096, NULL, 5, NULL);
+  if (run_cloning) xTaskCreate(&pump_cloning_task, "pump_cloning_task", 4096, NULL, 5, NULL);
 }
 
-void force_switch_pump_id_to_state(int id, T_pump_states new_state) {switch_pump_id_to_state(id,  new_state);}
+void force_gen_switch_pump_id_to_state(int id, T_pump_states new_state) {gen_switch_pump_id_to_state(id,  new_state);}
 
 void init_single_pump(int id, int GPIO_PUMP, int GPIO_PROT,int GPIO_CNT,bool prio, bool switchbackifresumed,int ACS71020_address )
 {
@@ -234,7 +276,6 @@ void clear_volumes_at_midnight()
 int measure_flowrate()
 {
   clear_volumes_at_midnight();
-  if(running_pump_ID==0)  return( measure_flowrate_on_local_pump(0));
-  else if(running_pump_ID==1) return (getvaluefromslave("get_flow_rate"));
-  else return 0;
+  if(get_remotePump(running_pump_ID))  return (getINTvaluefromslave("get_flow_rate"));
+  else return( measure_flowrate_on_local_pump(0));
 }

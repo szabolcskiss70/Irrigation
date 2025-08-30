@@ -21,14 +21,16 @@ extern bool motor_protect_func(float I,float T_trip,float T_reset,int looptime_m
 
 
 T_pump pump[3];
-char* PUMP_status_str[]={"PROT_T_TRIP","FLOW_PROT","UNDERVOLTAGE","PROT_T_RESET","DISABLED","SUSPENDED","DELAY","OFF","RESUMED","ON"};
+T_pump_status_changes pump_status_changes[3];
+
+char* PUMP_status_str[]={"P_UNKNOWN","PROT_T_TRIP","FLOW_PROT","UNDERVOLTAGE","PROT_T_RESET","DISABLED","SUSPENDED","DELAY","OFF","RESUMED","ON"};
 
 static const char *TAG = "PUMP";
 
 T_pump_states get_pump_id_state(int id)
 {
  if (!get_remotePump(id)) return (pump[id].status);
- return((T_pump_states) getvaluefromslave("get_pump_id_state"));
+ return((T_pump_states) getINTvaluefromslave("get_pump_id_state"));
 }
 
 /**
@@ -47,7 +49,12 @@ void switch_pump_ch_relay(int id,bool on_state)
  {
   if (running_pump_ID!=id)
   {//not running yet
-   pcnt_unit_get_count(pump[id].pcnt_unit, &pump[id].cnt_at_pump_start);
+   if (get_remotePump(id)) 
+   {
+    int CNT=getINTvaluefromslave("get_PCNT");
+    if (CNT>-1) pump[id].cnt_at_pump_start=CNT;
+   }
+   else get_CNT_from_flowmeter(pump[id].pcnt_unit,&pump[id].cnt_at_pump_start);
 	 pump[id].last_pump_on_time=now_pump();
   }
  } 
@@ -70,7 +77,7 @@ void switch_pump_ch_relay(int id,bool on_state)
 void switch_pump_id_to_state(int id, T_pump_states new_state)
 {
  pump[id].status=new_state;
- pump[id].status_change_time[new_state]=now_pump();
+ pump_status_changes[id].status_change_time[new_state]=now_pump();
  for (int state=PROT_T_TRIP;state<=P_UNDERVOLTAGE;state++) if(state==new_state) {pump[id].suspend_reason|=(1<<state);break;}
  
  switch (new_state)
@@ -155,21 +162,10 @@ void enable_pump(int ch,bool enable)
  */
 
 
-
-
-
-
 float convertCNT2Liter(int delta_volume_cnt)
 {
   return(1.0*delta_volume_cnt/YF_DN32_PULSE_PER_LITER);
 }
-
-
-
-
-
-
-
 
 
 void GetPumpStatusString(int id, char* message, int buf_size)
@@ -185,9 +181,9 @@ void GetPumpStatusString(int id, char* message, int buf_size)
 
 void getpumptimechanges(int id, char* message, int buf_size)
 {
-			for (int i=PROT_T_TRIP;i<=P_ON;i++)
+			for (int i=P_UNKNOWN;i<=P_ON;i++)
 			{
-				if (buf_size>64) sprintf(message+strlen(message),"ID:%d %s: %lld\n",id,PUMP_status_str[i],pump[id].status_change_time[i]);
+				if (buf_size>64) sprintf(message+strlen(message),"ID:%d %s: %lld\n",id,PUMP_status_str[i],pump_status_changes[id].status_change_time[i]);
 			}
 }
 
