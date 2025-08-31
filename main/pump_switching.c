@@ -124,9 +124,9 @@ int getINTvaluefromslave(char* msg)
  	 sprintf((char*)lora_transmit_buf,"IRRMGETI_%lu_%s",xTaskGetTickCount(),msg); 
 	 my_lora_send_packet(lora_transmit_buf,strlen((char*)lora_transmit_buf)); 
    if (xQueueReceive(lora_ans_evt_queue, &retval, 5*1000/portTICK_PERIOD_MS )==pdPASS)    return (retval); //portMAX_DELAY
-   else return (-1);
+   else return (0);
 	}
-  else return (-1);
+  else return (0);
 }
 
 
