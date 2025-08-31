@@ -2,13 +2,18 @@
 #include "pump_control.h"
 #include "lora_comm.h"
 #include <string.h>
+#include "freertos/event_groups.h"
 
 
 QueueHandle_t pump_request_queue;
+SemaphoreHandle_t pump_array_mutex;
+
 T_active_pump_suspended active_pump_suspended=NO; 
 int running_pump_ID=-1;
 int pump_num=0;
-
+char* dual_mode_fla_str[modeLAST-ONLY_SLAVE_RELAY]={"ONLY_SLAVE_RELAY","CURR_PROTECTED","VIA_LORA_FUNC","CLONING"};
+int dual_mode_flags=0;
+bool Cloned_buffer_valid=false;
 int other_pump(int id) {return((id==0)?1:0);}
 
 bool is_low_prio_pump_running()
@@ -127,39 +132,40 @@ int getINTvaluefromslave(char* msg)
 
 
 
-void getpumpbufferfromslave()
+int getpumpbufferfromslave()
 {
  uint8_t lora_transmit_buf[256];
-	//if (run_mode & (1<<USE_LORA))
+	if (lora_comm_initialized)
 	{	
+   int payloadlength=0; 
  	 sprintf((char*)lora_transmit_buf,"IRRMGETB_%lu_%s",xTaskGetTickCount(),"get_pump_id_struct"); 
 	 my_lora_send_packet(lora_transmit_buf,strlen((char*)lora_transmit_buf)); 
-   //wait4notify
+   if (xQueueReceive(lora_ans_evt_queue, &payloadlength, 5*1000/portTICK_PERIOD_MS )==pdPASS) return (payloadlength); //portMAX_DELAY
+   else return (-1);
 	}
-  vTaskDelay(5*1000 / portTICK_PERIOD_MS);
+  else return -1;
 }
 
 
 T_pump_states get_pump_id_state_array(int id)
 {
-  return (pump[id].status);
+  T_pump_states retval;
+  xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);  
+   retval=pump[id].status;
+  xSemaphoreGiveRecursive(pump_array_mutex);
+  return (retval);
 }
-
-
-
-
-
-
 
 static void pump_cloning_task(void* pvParameters)
 {
  while (true)
  {
   //ESP_LOGI("DEBUG_TASK","getpumpbufferfromslave");
-  getpumpbufferfromslave();
+  int received_bytes=getpumpbufferfromslave();
+  if (received_bytes!=sizeof(T_pump)) Cloned_buffer_valid=false;
+  else Cloned_buffer_valid=true;
  }
-vTaskDelay(10*1000 / portTICK_PERIOD_MS);
-
+ vTaskDelay(10*1000 / portTICK_PERIOD_MS);
 }
 
 
@@ -193,18 +199,19 @@ void set_pump_default_params(int id,char* ldata)
  }
 }
 
-void init_pump_switching(int run_cloning)
+void init_pump_switching(int ldual_mode_flags)
 {
   pump_request_queue = xQueueCreate(10, sizeof(T_pump_switching_request));
   xTaskCreate(&pump_switching_task, "pump_switching_task", 4096, NULL, 5, NULL);
-  if (run_cloning) xTaskCreate(&pump_cloning_task, "pump_cloning_task", 4096, NULL, 5, NULL);
+  if (ldual_mode_flags & (1<<CLONING)) xTaskCreate(&pump_cloning_task, "pump_cloning_task", 4096, NULL, 5, NULL);
+  dual_mode_flags=ldual_mode_flags;
 }
 
 void force_gen_switch_pump_id_to_state(int id, T_pump_states new_state) {gen_switch_pump_id_to_state(id,  new_state);}
 
-void init_single_pump(int id, int GPIO_PUMP, int GPIO_PROT,int GPIO_CNT,bool prio, bool switchbackifresumed,int ACS71020_address )
+void init_single_pump(int id, int GPIO_PUMP, int GPIO_PROT,int GPIO_CNT,bool prio, bool switchbackifresumed,int ACS71020_address, bool pump_current_prot )
 {
-  init_pump( id,  GPIO_PUMP,  GPIO_PROT, GPIO_CNT, prio,  switchbackifresumed, ACS71020_address);  
+  init_pump( id,  GPIO_PUMP,  GPIO_PROT, GPIO_CNT, prio,  switchbackifresumed, ACS71020_address,pump_current_prot);  
   pump_num++; 
 }
 
@@ -247,7 +254,11 @@ bool isPUMP_disabled_or_suspended()
  */
 T_pump_states check_pump_protection()
 {
- return ((pump_num==2)?(pump[0].status>pump[1].status)?pump[0].status:pump[1].status:pump[0].status);
+  T_pump_states retval;
+  xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);  
+   retval=(pump_num==2)?(pump[0].status>pump[1].status)?pump[0].status:pump[1].status:pump[0].status;
+  xSemaphoreGiveRecursive(pump_array_mutex);
+  return (retval);
 }
 
 void clear_volumes_at_midnight()
@@ -262,10 +273,13 @@ void clear_volumes_at_midnight()
  {
   for (int id=0;id<pump_num;id++)	
   {
+   xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);  
 		pump[id].daily_pump_flowmeter_counts=0;
 		pcnt_unit_clear_count(pump[id].pcnt_unit);
     pump[id].prev_daily_pump_flowmeter_counts_flowmeter=0;
     pump[id].prev_daily_pump_flowmeter_counts=0;
+   xSemaphoreGiveRecursive(pump_array_mutex);
+
   }
  }
  prev_now=now;
@@ -276,6 +290,15 @@ void clear_volumes_at_midnight()
 int measure_flowrate()
 {
   clear_volumes_at_midnight();
-  if(get_remotePump(running_pump_ID))  return (getINTvaluefromslave("get_flow_rate"));
-  else return( measure_flowrate_on_local_pump(0));
+  if(!get_remotePump(running_pump_ID)) return(measure_flowrate_on_local_pump(0));
+  else if (dual_mode_flags && (1<<CLONING)) 
+ { // value cloned from slave to pump_array[2]
+    if (!Cloned_buffer_valid) return 0;
+    return (0); //TODO: develop flow rate from cloning 
+ }
+ else if (dual_mode_flags && (1<<VIA_LORA_FUNC)) return (getINTvaluefromslave("get_flow_rate"));
+ else return 0;
 }
+
+
+

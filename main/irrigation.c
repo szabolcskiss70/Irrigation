@@ -169,13 +169,14 @@ typedef enum {USE_BLE,USE_WIFI,USE_ACS71020,MAIN_TASK,HANDLE_SCHEDULED,MOTOR_CUR
 //int PARAM_VALUES[pRUN_MODE] =(1<<USE_BLE) | (1<<USE_WIFI);
 bool USE_MCP=false;
 
-typedef enum {pRUN_MODE,pPUMP_NUM,pCHANNEL_NUM,pACS71020_ADDRESS,pSLAVE_RELAY,pFIRSTRUN,pLAST} T_PARAMS;
-char * PARAM_NAMES[pLAST-pRUN_MODE]={"RUN_MODE","PUMP_NUM","CHANNEL_NUM","ACS71020_ADDR","SLAVE_RELAY","FIRSTRUN"};
-int  PARAM_VALUES[pLAST-pRUN_MODE]={3,1,3,ACS71020_address_default,-1,1};
-int PARAM_LL[pLAST-pRUN_MODE]={3,0,0,ACS71020_address_min,-1,0};
-int PARAM_UL[pLAST-pRUN_MODE]={(1<<(LAST_MODE))-1,MAX_PUMP_NUM,MAX_CHANNEL_NUM,ACS71020_address_max,1,1};
 
-//PARAM_VALUES[pACS71020_ADDRESS]
+typedef enum {pRUN_MODE,pPUMP_NUM,pCHANNEL_NUM,pACS71020_ADDRESS,pSLAVE_RELAY,pFIRSTRUN,pDUAL_MODE,pLAST} T_PARAMS;
+char * PARAM_NAMES[pLAST-pRUN_MODE]={"RUN_MODE","PUMP_NUM","CHANNEL_NUM","ACS71020_ADDR","SLAVE_RELAY","DUAL_MODE","FIRSTRUN"};
+int  PARAM_VALUES[pLAST-pRUN_MODE]={3,1,3,ACS71020_address_default,-1,1,0};
+int PARAM_LL[pLAST-pRUN_MODE]={3,0,0,ACS71020_address_min,-1,0,0};
+int PARAM_UL[pLAST-pRUN_MODE]={(1<<(LAST_MODE))-1,MAX_PUMP_NUM,MAX_CHANNEL_NUM,ACS71020_address_max,1,1,(1<<modeLAST)-1};
+
+//PARAM_VALUES[pDUAL_MODE]
 
 static const int WIFI_CONNECTED_BIT = BIT0;
 static const int WIFI_FAIL_BIT = BIT1;
@@ -493,7 +494,7 @@ void to_lower(const char *str, char *out_str)
    else return 0;
  }  
  
- void Publish_file(char* filename)
+ void Publish_file(const char* filename)
 {
     char buf_2read[512];
 	char buf_2send[512];
@@ -3787,7 +3788,7 @@ void init_BLE()
 //#include "pump_control.h"
 void app_main()
 {
-	//ESP_LOGI("TEST","size:%d",sizeof(pump[2]));
+	//ESP_LOGI("TEST","size:%d",sizeof(T_pump));
 	app_desc = esp_app_get_description();
 	ESP_LOGI(TAG, "[APP] Startup..");
     ESP_LOGI(TAG, "[APP] Free memory: %lu bytes", esp_get_free_heap_size());
@@ -3835,39 +3836,23 @@ void app_main()
      Save_general_data_to_NVS();
 	}
 
-/*
-PARAM_VALUES[pPUMP_NUM] =1;
-PARAM_VALUES[pCHANNEL_NUM] =0;
-PARAM_VALUES[pRUN_MODE] =7;
-Save_data_to_NVS();*/
-/*
-    T_pump testP1;
-	pump[0].ID=0;
-	pump[1].ID=1;
-    testP1.ID=3;
-	int sizeT_pump=sizeof(T_pump);
-    memcpy(&pump[1],&testP1,sizeT_pump);
-    ESP_LOGE("ID0","%d",pump[0].ID);
-	ESP_LOGE("ID1","%d",pump[1].ID);
-	ESP_LOGE("ID2","%d",testP1.ID);*/
-
     I2C_mutex = xSemaphoreCreateMutex();
 	mqtt_ble_mutex = xSemaphoreCreateMutex();
 	MAIN_TASK_mutex = xSemaphoreCreateMutex();
+	pump_array_mutex = xSemaphoreCreateRecursiveMutex();
 
     if (PARAM_VALUES[pRUN_MODE]  & (1<<USE_LORA)) init_lora();
 	
   
 	switch (PARAM_VALUES[pPUMP_NUM] )
 	{ 
-	  case 2: init_single_pump(1,GPIO_OUTPUT_PUMP_2,-1,-1,false,false,PARAM_VALUES[pACS71020_ADDRESS]); 
-	  case 1: init_single_pump(0,GPIO_OUTPUT_PUMP_1,ISOLATED_INPUT_PUMP_1,ISOLATED_INPUT_2,true,true,PARAM_VALUES[pACS71020_ADDRESS]); 
+	  case 2: init_single_pump(1,GPIO_OUTPUT_PUMP_2,-1,-1,false,false,PARAM_VALUES[pACS71020_ADDRESS],PARAM_VALUES[pDUAL_MODE] & (1<<CURR_PROTECTED)); 
+	  case 1: init_single_pump(0,GPIO_OUTPUT_PUMP_1,ISOLATED_INPUT_PUMP_1,ISOLATED_INPUT_2,true,true,PARAM_VALUES[pACS71020_ADDRESS],true); 
 			  break;
 	  default: break;
-
 	}
 
-    init_pump_switching((PARAM_VALUES[pRUN_MODE]  & (1<<CLONE_TASK)));
+    init_pump_switching(PARAM_VALUES[pDUAL_MODE]);
 
 	switch (PARAM_VALUES[pCHANNEL_NUM] )
 	{

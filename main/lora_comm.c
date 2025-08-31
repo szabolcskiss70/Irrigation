@@ -7,6 +7,7 @@
 #include "ctype.h"
 #include "mqtt_client.h"
 #include "pump_control.h"
+#include "pump_switching.h"
 
 
 static SemaphoreHandle_t LORA_RX_TX_mutex;
@@ -16,7 +17,7 @@ static const char *TAG = "LORA";
 uint8_t lora_transmit_buf[256];
 uint8_t lora_receive_buf[256];
 bool lora_comm_initialized=false;
-int INT_result;
+//int INT_result;
 
 extern  int my_esp_mqtt_client_publish(esp_mqtt_client_handle_t client, char* subtopic,const char* message,int par1, int par2, int par3);
 extern esp_mqtt_client_handle_t mqtt_client;
@@ -132,7 +133,9 @@ void task_rx(void *p)
 			 else if (strcmp(ldata,"get_PCNT")==0)
 			 {
 			  int CNT;
-			  get_CNT_from_flowmeter(pump[0].pcnt_unit,&CNT);
+			  xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);
+			   get_CNT_from_flowmeter(pump[0].pcnt_unit,&CNT);
+			  xSemaphoreGiveRecursive(pump_array_mutex);
 	     	  sprintf((char*)lora_transmit_buf,"IRRSRETI_%lu_%d",tick,CNT); 
 			  lora_send_packet(lora_transmit_buf,strlen((char*)lora_transmit_buf)); 
 			 }		 
@@ -143,19 +146,36 @@ void task_rx(void *p)
 			  int sizeT_pump=sizeof(T_pump);
 			  sprintf((char*)lora_transmit_buf,"IRRSRETB_%lu_",tick);
 			  int header_length=strlen((char*)lora_transmit_buf);
-			  memcpy(lora_transmit_buf+header_length,&pump[2],sizeT_pump);
+			  xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);
+	 			  memcpy(lora_transmit_buf+header_length,&pump[0],sizeT_pump);
+			  xSemaphoreGiveRecursive(pump_array_mutex);
 			  lora_send_packet(lora_transmit_buf,header_length+sizeT_pump); 
 			 }
 			}
 			}
 			else if (sscanf((char*)lora_receive_buf,"IRRSRETI_%lu_%d",&tick,&intval)==2)
 			{
-			 INT_result=intval; 
 			 xQueueSend(lora_ans_evt_queue, &intval, NULL);
 			}
 			else if (sscanf((char*)lora_receive_buf,"IRRSRETB_%lu_",&tick)==1)
 			{
-				memcpy(&pump[2],lora_receive_buf+x-sizeof(T_pump),sizeof(T_pump));	 
+    			xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);
+				    int length=sizeof(T_pump);
+					char *ptr0,*ptr1,*ptr2;
+					ptr0=&lora_receive_buf;
+					int payload_length=0;
+					if ((ptr1=strchr((char*)lora_receive_buf,'_'))!=NULL)
+					{
+					 if ((ptr2=strchr(ptr1+1,'_'))!=NULL)	
+					 {
+						payload_length=x-(ptr2-ptr0+1);
+						memcpy(&pump[2],ptr2+1,payload_length);
+					 }
+					}
+
+
+				xSemaphoreGiveRecursive(pump_array_mutex);
+				xQueueSend(lora_ans_evt_queue, &payload_length, NULL);
 			}
 
 		

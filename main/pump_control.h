@@ -65,7 +65,7 @@ extern T_pump_status_changes pump_status_changes[3];
 T_pump_states get_pump_id_state(int id);
 
 void switch_pump_ch(int id,bool on_state);
-void init_pump(int id, int GPIO_PUMP, int GPIO_PROT,int GPIO_CNT,bool prio, bool switchbackifresumed,int ACS71020_address );
+void init_pump(int id, int GPIO_PUMP, int GPIO_PROT,int GPIO_CNT,bool prio, bool switchbackifresumed,int ACS71020_address, bool pump_current_prot);
 
 T_pump_states check_pump_protection();
 
