@@ -1141,6 +1141,7 @@ void switch_pump(bool on_state, T_pump_list assigned_pump)
   pump_switching_request.state=on_state;
   pump_switching_request.assigned_pump=assigned_pump;
   xQueueSend(pump_request_queue, &pump_switching_request, NULL);
+  xSemaphoreTake(pump_request_done_mutex, 5*100/portTICK_PERIOD_MS);
 }
 
 
@@ -1992,8 +1993,17 @@ void switch_pump_for_channel(int channel,int status)
 
 void switch_channel_relays(int channel, int status)
 { 
-  switch_pump_for_channel(channel,status);
-  writeDO(channels[channel].Valve_GPIO_OUTPUT, status);
+  if (status)
+  {
+	writeDO(channels[channel].Valve_GPIO_OUTPUT, status);
+	vTaskDelay(500 / portTICK_PERIOD_MS);	
+	switch_pump_for_channel(channel,status);   
+  }
+  else
+  {
+    switch_pump_for_channel(channel,status);	
+    writeDO(channels[channel].Valve_GPIO_OUTPUT, status);
+  }
 }
 
 
@@ -3785,10 +3795,9 @@ void init_BLE()
 
 
 
-//#include "pump_control.h"
+
 void app_main()
 {
-	//ESP_LOGI("TEST","size:%d",sizeof(T_pump));
 	app_desc = esp_app_get_description();
 	ESP_LOGI(TAG, "[APP] Startup..");
     ESP_LOGI(TAG, "[APP] Free memory: %lu bytes", esp_get_free_heap_size());
@@ -3840,6 +3849,7 @@ void app_main()
 	mqtt_ble_mutex = xSemaphoreCreateMutex();
 	MAIN_TASK_mutex = xSemaphoreCreateMutex();
 	pump_array_mutex = xSemaphoreCreateRecursiveMutex();
+	pump_request_done_mutex=xSemaphoreCreateMutex();
 
     if (PARAM_VALUES[pRUN_MODE]  & (1<<USE_LORA)) init_lora();
 	

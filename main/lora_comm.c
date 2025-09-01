@@ -26,6 +26,7 @@ extern bool Process_EVENT_DATA(char* ltopic, char* ldata, bool MQTT);
 extern T_pump_states get_pump_id_state(int id);
 extern int measure_flowrate_on_local_pump(int running_pump_ID);
 extern char MQTT_BLE_answer[2048];
+char *lora_cmd_str[lget_pump_id_struct+1]={"state","rate","PCNT","struct"};
 
 
 
@@ -96,21 +97,22 @@ void task_rx(void *p)
 			int intval;
 			char ltopic[256];
 			char ldata[256];
+			int length=0;
 			unsigned long tick;
 			memset(ltopic,0,sizeof(ltopic));
 			memset(ldata,0,sizeof(ldata));
-    		if (sscanf((char*)lora_receive_buf,"IRRMOSI_%lu_%[^=]=%[^\n]",&tick,ltopic,ldata)==3)
+    		if (sscanf((char*)lora_receive_buf,"IRRMOSI_%lu_%d:%[^=]=%[^\n]",&tick,&length,ltopic,ldata)>=3)
 			{
 			 to_upper(ltopic,ltopic);
 			 Process_EVENT_DATA(ltopic,ldata,false);
-			 sprintf((char*)lora_transmit_buf,"IRRMISO_%.240s DONE",MQTT_BLE_answer); 
+			 sprintf((char*)lora_transmit_buf,"IRRMISO_%lu_%d:%.220s",tick,strlen(MQTT_BLE_answer),MQTT_BLE_answer); 
 			 lora_send_packet(lora_transmit_buf,strlen((char*)lora_transmit_buf)); 
 			}
-			if (sscanf((char*)lora_receive_buf,"IRRMISO_%lu_%[^=]=%[^\n]",&tick,ltopic,ldata)==3)
+			if (sscanf((char*)lora_receive_buf,"IRRMISO_%lu_%d:%s",&tick,&length,ltopic)==3)
 			{
 				 my_esp_mqtt_client_publish(mqtt_client, "SLAVE/ACK", (char*)lora_receive_buf, 0, 0, 0);   //Qos=1; retain=1
 			}
-			else if (sscanf((char*)lora_receive_buf,"IRRMCMD_%lu_%s",&tick,ldata)==2)
+			else if (sscanf((char*)lora_receive_buf,"IRRMCMD_%lu_%d:%s",&tick,&length,ldata)==3)
 			{
 			 if (sscanf(ldata,"switch_pump_id_to_state:%d",&intval)==1)
 			 {
@@ -118,33 +120,39 @@ void task_rx(void *p)
 			 }	
 			}
 
-			else if (sscanf((char*)lora_receive_buf,"IRRMGETI_%lu_%s",&tick,ldata)==2)
+			else if (sscanf((char*)lora_receive_buf,"IRRMGETI_%lu_%d:%s",&tick,&length,ldata)==3)
 			{
-			 if (strcmp(ldata,"get_pump_id_state")==0)
+			 if (strcmp(ldata,lora_cmd_str[lget_pump_id_state])==0)
 			 {
-			  sprintf((char*)lora_transmit_buf,"IRRSRETI_%lu_%d",tick,get_pump_id_state(0)); 
+			  char result[16];
+			  sprintf(result,"%d",get_pump_id_state(0));
+			  sprintf((char*)lora_transmit_buf,"IRRSRETI_%lu_%d:%s",tick,strlen(result),result); 
 			  lora_send_packet(lora_transmit_buf,strlen((char*)lora_transmit_buf)); 
 			 }
-			 else if (strcmp(ldata,"get_flow_rate")==0)
+			 else if (strcmp(ldata,lora_cmd_str[lget_flow_rate])==0)
 			 {
-			  sprintf((char*)lora_transmit_buf,"IRRSRETI_%lu_%d",tick,measure_flowrate_on_local_pump(0)); 
+			  char result[16];
+			  sprintf(result,"%d",measure_flowrate_on_local_pump(0));	
+			  sprintf((char*)lora_transmit_buf,"IRRSRETI_%lu_%d:%s",tick,strlen(result),result); 
 			  lora_send_packet(lora_transmit_buf,strlen((char*)lora_transmit_buf)); 
 			 }
-			 else if (strcmp(ldata,"get_PCNT")==0)
+			 else if (strcmp(ldata,lora_cmd_str[lget_PCNT])==0)
 			 {
 			  int CNT;
 			  xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);
 			   get_CNT_from_flowmeter(pump[0].pcnt_unit,&CNT);
 			  xSemaphoreGiveRecursive(pump_array_mutex);
-	     	  sprintf((char*)lora_transmit_buf,"IRRSRETI_%lu_%d",tick,CNT); 
+			  char result[16];
+			  sprintf(result,"%d",CNT);
+	     	  sprintf((char*)lora_transmit_buf,"IRRSRETI_%lu_%d:%s",tick,strlen(result),result); 
 			  lora_send_packet(lora_transmit_buf,strlen((char*)lora_transmit_buf)); 
 			 }		 
-			 else if (sscanf((char*)lora_receive_buf,"IRRMGETB_%lu_%s",&tick,ldata)==2)
+			 else if (sscanf((char*)lora_receive_buf,"IRRMGETB_%lu_%d:%s",&tick,&length,ldata)==3)
 			{
-			 if (strcmp(ldata,"get_pump_id_struct")==0)
+			 if (strcmp(ldata,lora_cmd_str[lget_pump_id_struct])==0)
 			 {
 			  int sizeT_pump=sizeof(T_pump);
-			  sprintf((char*)lora_transmit_buf,"IRRSRETB_%lu_",tick);
+			  sprintf((char*)lora_transmit_buf,"IRRSRETB_%lu_%d_",tick,sizeT_pump);
 			  int header_length=strlen((char*)lora_transmit_buf);
 			  xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);
 	 			  memcpy(lora_transmit_buf+header_length,&pump[0],sizeT_pump);
@@ -153,15 +161,14 @@ void task_rx(void *p)
 			 }
 			}
 			}
-			else if (sscanf((char*)lora_receive_buf,"IRRSRETI_%lu_%d",&tick,&intval)==2)
+			else if (sscanf((char*)lora_receive_buf,"IRRSRETI_%lu_%d:%d",&tick,&length,&intval)==3)
 			{
 			 xQueueSend(lora_ans_evt_queue, &intval, NULL);
 			}
-			else if (sscanf((char*)lora_receive_buf,"IRRSRETB_%lu_",&tick)==1)
+			else if (sscanf((char*)lora_receive_buf,"IRRSRETB_%lu_%d",&tick,&length)==2)
 			{
     			xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);
-				    int length=sizeof(T_pump);
-					char *ptr0,*ptr1,*ptr2;
+				    char *ptr0,*ptr1,*ptr2;
 					ptr0=&lora_receive_buf;
 					int payload_length=0;
 					if ((ptr1=strchr((char*)lora_receive_buf,'_'))!=NULL)

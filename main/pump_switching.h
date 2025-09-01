@@ -15,6 +15,7 @@ extern int pump_num;
 extern int running_pump_ID;
 extern QueueHandle_t pump_request_queue;
 extern SemaphoreHandle_t pump_array_mutex;
+extern SemaphoreHandle_t pump_request_done_mutex;
 extern int dual_mode_flags;
 extern bool Cloned_buffer_valid;
 
@@ -38,5 +39,6 @@ typedef struct
   T_pump_list assigned_pump;  
 }
 T_pump_switching_request;
+
 
 #endif

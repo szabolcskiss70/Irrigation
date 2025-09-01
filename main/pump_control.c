@@ -6,6 +6,7 @@
 #include "pump_current_protection.h"
 #include "pump_switching.h"
 #include "pump_params.h"
+#include "lora_comm.h"
 
 extern SemaphoreHandle_t I2C_mutex;
 
@@ -45,9 +46,9 @@ T_pump_states get_pump_id_state(int id)
   xSemaphoreGiveRecursive(pump_array_mutex); 
   return (retval);
  }
- else if (dual_mode_flags && (1<<VIA_LORA_FUNC)) return((T_pump_states) getINTvaluefromslave("get_pump_id_state"));
+ else if (dual_mode_flags && (1<<VIA_LORA_FUNC)) return((T_pump_states) getINTvaluefromslave(lora_cmd_str[lget_pump_id_state]));
  else
- {
+ { //switch slave_relay to power up remote pump with auto switch on mode
   xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);
    retval=pump[id].status;
   xSemaphoreGiveRecursive(pump_array_mutex); 
@@ -92,7 +93,7 @@ void switch_pump_ch_relay(int id,bool on_state)
    {
     if (dual_mode_flags && (1<<VIA_LORA_FUNC)) 
     {
-     int CNT=getINTvaluefromslave("get_PCNT");
+     int CNT=getINTvaluefromslave(lora_cmd_str[lget_PCNT]);
      if (CNT>-1) set_cnt_at_pump_start(id,CNT);
     }
     else 
@@ -578,10 +579,11 @@ void Chek_pump_current_and_flow_rate_task(void *pvParameters)
   //ESP_LOGI("DEBUG_TASK", "irms:%lf limit:%f",irms,actpump->max_current);
    if (urms<180) switch_pump_id_to_state(actpump->ID,P_UNDERVOLTAGE); 
    else if(get_pump_id_state(actpump->ID)==P_UNDERVOLTAGE) switch_pump_id_to_state(actpump->ID,P_DELAY);
+
    xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);
     bool currentprotstate=motor_protect_func(irms,actpump->T_trip,actpump->T_reset,xFrequency*portTICK_PERIOD_MS,get_pump_id_state(actpump->ID)==P_ON, &pump[actpump->ID].T_max);
    xSemaphoreGiveRecursive(pump_array_mutex);
-    if (!currentprotstate) switch_pump_id_to_state(actpump->ID,PROT_T_TRIP);
+   if ((get_pump_id_state(actpump->ID)==P_ON) && !currentprotstate) switch_pump_id_to_state(actpump->ID,PROT_T_TRIP);
    else if(get_pump_id_state(actpump->ID)==PROT_T_TRIP) switch_pump_id_to_state(actpump->ID,PROT_T_RESET);
    else if(get_pump_id_state(actpump->ID)==PROT_T_RESET) switch_pump_id_to_state(actpump->ID,P_DELAY);
   }

@@ -18,6 +18,9 @@ extern QueueHandle_t lora_ans_evt_queue;
 int my_lora_packet_rssi();
 void my_lora_send_packet(uint8_t *buf, int size);
 
+typedef enum {lget_pump_id_state,lget_flow_rate,lget_PCNT,lget_pump_id_struct};
+extern char *lora_cmd_str[lget_pump_id_struct+1];
+
 
 
 #endif
