@@ -913,9 +913,9 @@ bool LIFE_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 				   static bool firstrun=true;
 				   if (firstrun)	
 				   {
-					esp_ota_mark_app_valid_cancel_rollback(); //validate the last OTA update
-					strcpy(MQTT_BLE_answer,"FIRMWARE/ROLLBACK CANCELLED AUTOMATICALLY"); 
-					my_esp_mqtt_client_publish(mqtt_client, "LIFE_LOOP", MQTT_BLE_answer, 0, 0, 0);   //Qos=0; retain=1
+					//esp_ota_mark_app_valid_cancel_rollback(); //validate the last OTA update
+					//strcpy(MQTT_BLE_answer,"FIRMWARE/ROLLBACK CANCELLED AUTOMATICALLY"); 
+					//my_esp_mqtt_client_publish(mqtt_client, "LIFE_LOOP", MQTT_BLE_answer, 0, 0, 0);   //Qos=0; retain=1
 				    
 					firstrun=false;
 				   }
@@ -1141,7 +1141,7 @@ void switch_pump(bool on_state, T_pump_list assigned_pump)
   pump_switching_request.state=on_state;
   pump_switching_request.assigned_pump=assigned_pump;
   xQueueSend(pump_request_queue, &pump_switching_request, NULL);
-  xSemaphoreTake(pump_request_done_mutex, 5*100/portTICK_PERIOD_MS);
+  //xSemaphoreTake(pump_request_done_mutex, 5*100/portTICK_PERIOD_MS);
 }
 
 

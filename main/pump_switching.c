@@ -43,7 +43,8 @@ int sendcommandtoslave(char* msg)
 
 void gen_switch_pump_id_to_state(int id, T_pump_states new_state)
 {
-  pump_control_array[id]=new_state;
+  if (new_state==P_ON) pump_control_array[id]=true;
+  else pump_control_array[id]=false;
   if (!get_remotePump(id)) switch_pump_id_to_state(id,new_state);
   else
   {
@@ -105,7 +106,7 @@ static void pump_switching_task(void* pvParameters)
   if (xQueueReceive(pump_request_queue, &request, 0 )==pdPASS) 
    {
      process_pump_request(request);
-     xSemaphoreGive(pump_request_done_mutex);
+     //xSemaphoreGive(pump_request_done_mutex);
    }
 
 
