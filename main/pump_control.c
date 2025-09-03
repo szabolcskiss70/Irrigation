@@ -119,6 +119,22 @@ void switch_pump_ch_relay(int id,bool on_state)
   xSemaphoreGiveRecursive(pump_array_mutex); 
 }
 
+int get_pump_protection_started_at(int id)
+{
+  time_t retval;
+  xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);
+   retval=pump[id].pump_protection_started_at;
+  xSemaphoreGiveRecursive(pump_array_mutex);
+  return (retval);
+}
+
+void set_pump_protection_started_at(int id)
+{
+  time_t retval;
+  xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);
+   pump[id].pump_protection_started_at=now_pump();
+  xSemaphoreGiveRecursive(pump_array_mutex);
+}
 
 
 /**
@@ -132,9 +148,16 @@ void switch_pump_ch_relay(int id,bool on_state)
 void switch_pump_id_to_state(int id, T_pump_states new_state)
 {
  xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);
+  T_pump_states Actual_state=pump[id].status;
   pump[id].status=new_state;
   pump_status_changes[id].status_change_time[new_state]=now_pump();
-  for (int state=PROT_T_TRIP;state<=P_UNDERVOLTAGE;state++) if(state==new_state) {pump[id].suspend_reason|=(1<<state);break;}
+  for (int state=PROT_T_TRIP;state<=P_UNDERVOLTAGE;state++) 
+   if(state==new_state) 
+    {
+      if (Actual_state!=new_state) set_pump_protection_started_at(id); //save time at state change to protection state
+      pump[id].suspend_reason|=(1<<state);
+      break;
+    }
   
   switch (new_state)
   {
@@ -303,14 +326,7 @@ int get_GPIO_PUMP(int id)
 }
 
 
-int get_pump_protection_started_at(int id)
-{
-  time_t retval;
-  xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);
-   retval=pump[id].pump_protection_started_at;
-  xSemaphoreGiveRecursive(pump_array_mutex);
-  return (retval);
-}
+
 
   
 void get_LEVEL_string_for_id(int id,char* result_string)
@@ -497,7 +513,7 @@ void check_pump_protection_GPIO_input(int id)
               {		
               ESP_LOGI("PUMP","PUMP SUSPENDED");  
               xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);  
-                pump[id].pump_protection_started_at=now_pump();
+                set_pump_protection_started_at(id);
                 pump[id].protection_level_off=water_level;
                 pump[id].sink_time=now_pump()-pump[id].last_pump_on_time;
                 pcnt_unit_get_count(pump[id].pcnt_unit, &pump[id].cnt_at_pump_suspend);
@@ -545,6 +561,7 @@ void check_pump_protection_GPIO_input(int id)
 static void level_switch_monitoring_task(void* pvParameters)
 {
   T_pump *actpump= (T_pump *)pvParameters;
+  check_pump_protection_GPIO_input(actpump->ID);
   uint32_t io_num;
     for (;;) {
         if (xQueueReceive(gpio_evt_queue, &io_num, portMAX_DELAY)==pdPASS) 
@@ -584,7 +601,7 @@ void Chek_pump_current_and_flow_rate_task(void *pvParameters)
     bool currentprotstate=motor_protect_func(irms,actpump->T_trip,actpump->T_reset,xFrequency*portTICK_PERIOD_MS,get_pump_id_state(actpump->ID)==P_ON, &pump[actpump->ID].T_max);
    xSemaphoreGiveRecursive(pump_array_mutex);
    if ((get_pump_id_state(actpump->ID)==P_ON) && !currentprotstate) switch_pump_id_to_state(actpump->ID,PROT_T_TRIP);
-   else if(get_pump_id_state(actpump->ID)==PROT_T_TRIP) switch_pump_id_to_state(actpump->ID,PROT_T_RESET);
+   else if((get_pump_id_state(actpump->ID)==PROT_T_TRIP) && currentprotstate) switch_pump_id_to_state(actpump->ID,PROT_T_RESET);
    else if(get_pump_id_state(actpump->ID)==PROT_T_RESET) switch_pump_id_to_state(actpump->ID,P_DELAY);
   }
 
@@ -622,7 +639,7 @@ void Chek_pump_current_and_flow_rate_task(void *pvParameters)
                   Write_Msg_toDisplay(2,message);
                   xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);
                   pump[actpump->ID].protection_level_on=water_level;
-                  pump[actpump->ID].fill_time=now_pump()-pump[actpump->ID].pump_protection_started_at;
+                  pump[actpump->ID].fill_time=now_pump()-get_pump_protection_started_at(actpump->ID);
                   xSemaphoreGiveRecursive(pump_array_mutex);
                 }           
     }

@@ -1177,7 +1177,7 @@ bool TO_SLAVE_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32
 	if (PARAM_VALUES[pRUN_MODE]  & (1<<USE_LORA))
 	{
 	 MQTT_BLE_answer[0]=0;	
- 	 sprintf((char*)lora_transmit_buf,"IRRMOSI_%lu_%s",xTaskGetTickCount(),ldata); 
+ 	 sprintf((char*)lora_transmit_buf,"IRRMOSI_%lu_%d:%s",xTaskGetTickCount(),strlen(ldata),ldata); 
 	 my_lora_send_packet(lora_transmit_buf,strlen((char*)lora_transmit_buf)); 
 	}
 	else sprintf(MQTT_BLE_answer,"%s", "LORA not enabled");
