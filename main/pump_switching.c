@@ -100,9 +100,13 @@ time_t now_pump()
 
 static void pump_switching_task(void* pvParameters)
 {
+ T_pump_switching_request  request; 
+ request.state=false;
+ request.assigned_pump=PUMP1;
+
  while (true)
  {
-  T_pump_switching_request  request;
+
   if (xQueueReceive(pump_request_queue, &request, 0 )==pdPASS) 
    {
      process_pump_request(request);
@@ -110,27 +114,28 @@ static void pump_switching_task(void* pvParameters)
    }
 
 
-							
-     
-  if (active_pump_suspended!=NO) 
-  {
-    if (isPUMP_available(other_pump(active_pump_suspended))) 
+	if ((request.assigned_pump==BOTH) && request.state)
+  {						  
+    if (active_pump_suspended!=NO) 
     {
-     vTaskDelay(5*1000 / portTICK_PERIOD_MS); //delay between pump change over to allow current prot cool down
-     gen_switch_pump_id_to_state(other_pump(active_pump_suspended),P_ON); //switch to an other pump
-     active_pump_suspended=NO;    
-    }
-  }
-  /*if (is_low_prio_pump_running())
-  {
-    if (getPUMP_switchbackifavailable(other_pump(running_pump_ID)) && (now_pump()-pump[running_pump_ID].last_pump_on_time)>get_restart_delay(other_pump(running_pump_ID)))
-      if (isPUMP_available(other_pump(running_pump_ID))) 
+      if (isPUMP_available(other_pump(active_pump_suspended))) 
       {
-        int other_pump_ID=other_pump(running_pump_ID);
-        gen_switch_pump_id_to_state(running_pump_ID,P_OFF);
-        gen_switch_pump_id_to_state(other_pump_ID,P_ON);
+      vTaskDelay(5*1000 / portTICK_PERIOD_MS); //delay between pump change over to allow current prot cool down
+      gen_switch_pump_id_to_state(other_pump(active_pump_suspended),P_ON); //switch to an other pump
+      active_pump_suspended=NO;    
       }
-  }*/
+    }
+    /*if (is_low_prio_pump_running())
+    {
+      if (getPUMP_switchbackifavailable(other_pump(running_pump_ID)) && (now_pump()-pump[running_pump_ID].last_pump_on_time)>get_restart_delay(other_pump(running_pump_ID)))
+        if (isPUMP_available(other_pump(running_pump_ID))) 
+        {
+          int other_pump_ID=other_pump(running_pump_ID);
+          gen_switch_pump_id_to_state(running_pump_ID,P_OFF);
+          gen_switch_pump_id_to_state(other_pump_ID,P_ON);
+        }
+    }*/
+  }
   vTaskDelay(1*1000 / portTICK_PERIOD_MS);
  }
 }
