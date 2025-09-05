@@ -2719,7 +2719,7 @@ void mainTask(void *pvParameters){
     }
 	else Write_Msg_toDisplay(1,"wait for SNTP sync.");
     
-	switch (check_pump_protection(now))
+	switch (check_pump_state(now))
 	{
 	 case P_SUSPENDED:
 	      for(ch=0;ch<MAX_CHANNEL_NUM;ch++) 

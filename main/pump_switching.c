@@ -43,8 +43,8 @@ int sendcommandtoslave(char* msg)
 
 void gen_switch_pump_id_to_state(int id, T_pump_states new_state)
 {
-  if (new_state==P_ON) pump_control_array[id]=true;
-  else pump_control_array[id]=false;
+  if (new_state==P_ON) {pump_control_array[id]=true;controlled_pump=id;}
+  else {pump_control_array[id]=false;if(pump_control_array[other_pump(id)]==true) controlled_pump=other_pump(id); else controlled_pump=-1;}
   if (!get_remotePump(id)) switch_pump_id_to_state(id,new_state);
   else
   {
@@ -266,22 +266,13 @@ bool isPUMP_disabled_or_suspended()
   return true;
 }
 
-/**
- * @brief check pump protection imputs and change pump states, needs to be called periodicaly
- * 
- * check status of max 2 pumps,
- * SUSPEND pump if protection needed, 
- * automatically activate 2nd pump if available
- * does not retsart the pump if resumed, it needs to be switched ON from higher level together with valves
- * 
- *
- * @return  higher state of available pumps
- */
-T_pump_states check_pump_protection()
+
+T_pump_states check_pump_state()
 {
   T_pump_states retval;
   xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);  
-   retval=(pump_num==2)?(pump[0].status>pump[1].status)?pump[0].status:pump[1].status:pump[0].status;
+   if (controlled_pump==-1) retval= P_OFF;
+   else retval= pump[controlled_pump].status;
   xSemaphoreGiveRecursive(pump_array_mutex);
   return (retval);
 }

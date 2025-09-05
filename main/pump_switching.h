@@ -29,7 +29,7 @@ void init_single_pump(int id, int GPIO_PUMP, int GPIO_PROT,int GPIO_CNT,bool pri
 void get_LEVEL_string(char* result_string);
 void GetVolumeString(char *result_string);
 bool isPUMP_disabled_or_suspended();
-T_pump_states check_pump_protection();
+T_pump_states check_pump_state();
 int measure_flowrate();
 time_t now_pump();
 
