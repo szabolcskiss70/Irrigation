@@ -1723,7 +1723,7 @@ bool LIST_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 	else if (strcmp(ldata,"LORA")==0)
 	{
 		MQTT_BLE_answer[0]=0;
-		sprintf(MQTT_BLE_answer,"rssi:%d, Data:%s\n",my_lora_packet_rssi(), lora_receive_buf);
+		sprintf(MQTT_BLE_answer,"rssi:%d,snr:%f Data:%s\n",my_lora_packet_rssi(), my_lora_packet_snr(),lora_receive_buf);
 
 	}
 

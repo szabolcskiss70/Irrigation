@@ -43,7 +43,7 @@ int init_lora()
 		//lora_comm_initialized();
 
 		lora_set_frequency(433775000);
-		lora_set_spreading_factor(12);
+		lora_set_spreading_factor(10);
 		lora_set_tx_power(17);
 		lora_set_bandwidth(125000);
 		lora_set_coding_rate(8);
@@ -213,6 +213,17 @@ int my_lora_packet_rssi()
 	if (!lora_comm_initialized) return (-200);
 	xSemaphoreTake(LORA_RX_TX_mutex, portMAX_DELAY);
 	 retval=lora_packet_rssi();
+ 	xSemaphoreGive(LORA_RX_TX_mutex);
+	return (retval);
+}
+
+
+float my_lora_packet_snr()
+{
+	float retval;
+	if (!lora_comm_initialized) return (0);
+	xSemaphoreTake(LORA_RX_TX_mutex, portMAX_DELAY);
+	 retval=lora_packet_snr();
  	xSemaphoreGive(LORA_RX_TX_mutex);
 	return (retval);
 }

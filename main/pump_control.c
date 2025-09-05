@@ -72,6 +72,23 @@ int get_cnt_at_pump_start(int id)
   return (retval);
 }
 
+time_t get_last_pump_on_time(int id)
+{
+ time_t retval;
+ xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);
+  retval= pump[id].last_pump_on_time;
+ xSemaphoreGiveRecursive(pump_array_mutex);
+ return (retval);
+}
+
+void set_last_pump_on_time(int id)
+{
+ xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);
+  pump[id].last_pump_on_time=now_pump();
+ xSemaphoreGiveRecursive(pump_array_mutex);
+}
+
+
 
 /**
  * @brief Switch pump relay ON/OFF for pump id
@@ -107,9 +124,7 @@ void switch_pump_ch_relay(int id,bool on_state)
      get_CNT_from_flowmeter(pump[id].pcnt_unit,&pump[id].cnt_at_pump_start);
     xSemaphoreGiveRecursive(pump_array_mutex); 
    }
-   xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);
-  	 pump[id].last_pump_on_time=now_pump();
-   xSemaphoreGiveRecursive(pump_array_mutex); 
+   set_last_pump_on_time(id);
   }
  } 
 	running_pump_ID=(on_state==true)?id:-1;
@@ -147,6 +162,7 @@ void set_pump_protection_started_at(int id)
  */
 void switch_pump_id_to_state(int id, T_pump_states new_state)
 {
+ if((pump[id].status==P_DISABLED) && (new_state!=P_OFF)) return; 
  xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);
   T_pump_states Actual_state=pump[id].status;
   pump[id].status=new_state;
@@ -165,7 +181,6 @@ void switch_pump_id_to_state(int id, T_pump_states new_state)
                             pump[id].I_max=0;
                             pump[id].Flow_CNT_at_err=1000;
                             pump[id].suspend_reason=0;
-                            pump[id].just_turned_on=true;
                             switch_pump_ch_relay(id,true);	 
                             break;
     default:                switch_pump_ch_relay(id,false);	           
@@ -184,7 +199,6 @@ void init_pump(int id, int GPIO_PUMP, int GPIO_PROT,int GPIO_CNT,bool prio, bool
   xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);
 	pump[id].ID=id;
   pump[id].remote_pump=false;
-  pump[id].just_turned_on=false;
   pump[id].pump_running=false;
 	pump[id].GPIO_PUMP=GPIO_PUMP;
 	pump[id].GPIO_PROT=GPIO_PROT;
@@ -417,7 +431,7 @@ bool check_flowrate(int pump_id,int looptime_ms)
 void GetVolumeStringfor_pump(int id,char *result_string)
 {
   xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);  
-  	sprintf(result_string+strlen(result_string),"Avg: %0.1f l/min",60*convertCNT2Liter(pump[id].daily_pump_flowmeter_counts-get_cnt_at_pump_start(id))/(1.0*(now_pump() - pump[id].last_pump_on_time))); 
+  	sprintf(result_string+strlen(result_string),"Avg: %0.1f l/min",60*convertCNT2Liter(pump[id].daily_pump_flowmeter_counts-get_cnt_at_pump_start(id))/(1.0*(now_pump() - get_last_pump_on_time(id)))); 
     xSemaphoreGiveRecursive(pump_array_mutex);
 }
 
@@ -515,7 +529,7 @@ void check_pump_protection_GPIO_input(int id)
               xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);  
                 set_pump_protection_started_at(id);
                 pump[id].protection_level_off=water_level;
-                pump[id].sink_time=now_pump()-pump[id].last_pump_on_time;
+                pump[id].sink_time=now_pump()-get_last_pump_on_time(id);
                 pcnt_unit_get_count(pump[id].pcnt_unit, &pump[id].cnt_at_pump_suspend);
                 pump[id].sink_volume=convertCNT2Liter(pump[id].cnt_at_pump_suspend-get_cnt_at_pump_start(id));
               xSemaphoreGiveRecursive(pump_array_mutex);
@@ -609,14 +623,16 @@ void Chek_pump_current_and_flow_rate_task(void *pvParameters)
   if (get_GPIO_CNT(actpump->ID)!=-1)
   {
     int limit,sec;
-    for (sec=1;sec<20;sec++) if ((limit=sec*get_flow_rate_protection_limit_dl_per_min(actpump->ID)/10*YF_DN32_PULSE_PER_LITER/60)>=2) break;	
+    for (sec=1;sec<20;sec++) if ((limit=sec*get_flow_rate_protection_limit_dl_per_min(actpump->ID)/10*YF_DN32_PULSE_PER_LITER/60)>=3) break;	
     //ESP_LOGI("TEST","%d %d",limit,sec);
 
     if ((run_cnt%sec==0) && (get_pump_id_state(actpump->ID)==P_ON) && (!check_flowrate(actpump->ID,sec*xFrequency*portTICK_PERIOD_MS))) 
     {
-      ESP_LOGI("DEBUG_TASK","Too low flow rate"); 
-      if (actpump->just_turned_on) actpump->just_turned_on=false;
-      else switch_pump_id_to_state(actpump->ID,P_FLOW_PROT);
+      if (now_pump()-get_last_pump_on_time(actpump->ID)>5)
+      {
+       ESP_LOGI("DEBUG_TASK","Too low flow rate"); 
+       switch_pump_id_to_state(actpump->ID,P_FLOW_PROT);
+      }
     }
     if(get_pump_id_state(actpump->ID)==P_FLOW_PROT) switch_pump_id_to_state(actpump->ID,P_DELAY);
 

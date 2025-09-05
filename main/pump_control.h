@@ -42,7 +42,6 @@ typedef struct{
 	int flow_rate_protection_limit_dl_per_min;
 	bool Auto_switch_on_if_powered;
 	bool remote_pump;
-	bool just_turned_on;
 	int suspend_reason;
 
 	int GPIO_PUMP; //GPIO of pump relay
