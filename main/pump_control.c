@@ -145,7 +145,6 @@ int get_pump_protection_started_at(int id)
 
 void set_pump_protection_started_at(int id)
 {
-  time_t retval;
   xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);
    pump[id].pump_protection_started_at=now_pump();
   xSemaphoreGiveRecursive(pump_array_mutex);
@@ -369,8 +368,23 @@ int getfilltime(int id)
 }
 
 
-int measure_flowrate_on_local_pump(int pump_ID)
+int get_flow_count_increase_local_pump(int pump_ID)
 {
+  int delta_volume_cnt=0;
+  if(pump_ID!=-1)
+  {
+     xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);
+      ESP_ERROR_CHECK(pcnt_unit_get_count(pump[pump_ID].pcnt_unit, &pump[pump_ID].daily_pump_flowmeter_counts));
+      delta_volume_cnt=pump[pump_ID].daily_pump_flowmeter_counts-pump[pump_ID].prev_daily_pump_flowmeter_counts;
+      pump[pump_ID].prev_daily_pump_flowmeter_counts=pump[pump_ID].daily_pump_flowmeter_counts;
+     xSemaphoreGiveRecursive(pump_array_mutex);
+  }
+  return delta_volume_cnt;
+}
+
+float measure_flowrate_on_local_pump(int pump_ID)
+{
+  float volume_rate_liter_per_min=0;	
   if(pump_ID!=-1)
   {  
   xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);
@@ -378,28 +392,16 @@ int measure_flowrate_on_local_pump(int pump_ID)
 	if(TimePastVolumeMeasured==0)  TimePastVolumeMeasured=esp_timer_get_time();
 	uint64_t Volume_measure_delta_time; 
   
-	int delta_volume_cnt1=0;
-  int delta_volume_cnt2=0;
-	ESP_ERROR_CHECK(pcnt_unit_get_count(pump[pump_ID].pcnt_unit, &pump[pump_ID].daily_pump_flowmeter_counts));
-  delta_volume_cnt1=pump[pump_ID].daily_pump_flowmeter_counts-pump[pump_ID].prev_daily_pump_flowmeter_counts;
-  pump[pump_ID].prev_daily_pump_flowmeter_counts=pump[pump_ID].daily_pump_flowmeter_counts;
-  delta_volume_cnt2=pump[pump_ID].daily_pump_flowmeter_counts-pump[pump_ID].prev_daily_pump_flowmeter_counts_flowmeter;
-  
-	
+  int delta_volume_cnt2=pump[pump_ID].daily_pump_flowmeter_counts-pump[pump_ID].prev_daily_pump_flowmeter_counts_flowmeter;
 	  if (((Volume_measure_delta_time=(esp_timer_get_time() - TimePastVolumeMeasured)) >= Volume_measure_interval_us) && (delta_volume_cnt2>5))
     {
-	   char message[32];  
-     float volume_rate_liter_per_min;	
      volume_rate_liter_per_min= 60*convertCNT2Liter(delta_volume_cnt2)/(1.0*Volume_measure_delta_time/1000000.0);
-     sprintf(message,"%0.1f l/min %0.1f l",volume_rate_liter_per_min,convertCNT2Liter(pump[pump_ID].daily_pump_flowmeter_counts-get_cnt_at_pump_start(pump_ID)));
-     Write_Msg_toDisplay(5,message);
      pump[pump_ID].prev_daily_pump_flowmeter_counts_flowmeter=pump[pump_ID].daily_pump_flowmeter_counts;
 	   TimePastVolumeMeasured = esp_timer_get_time(); // get next publish time
     }
    xSemaphoreGiveRecursive(pump_array_mutex);
-   return delta_volume_cnt1;
   }
-  else return 0;
+  return volume_rate_liter_per_min;
 }
 
 

@@ -74,7 +74,7 @@ void GetVolumeStringfor_pump(int id,char* result_string);
 bool isPUMP_disabled(int id);
 bool isPUMP_available(int id);
 void switch_pump_id_to_state(int id, T_pump_states new_state);
-int measure_flowrate_on_local_pump(int pump_ID);
+float measure_flowrate_on_local_pump(int pump_ID);
 
 
 #endif

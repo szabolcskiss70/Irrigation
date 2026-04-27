@@ -21,6 +21,7 @@ extern bool Cloned_buffer_valid;
 
 void set_pump_default_params(int id,char* ldata);
 int getINTvaluefromslave(char* msg);
+float getFloatvaluefromslave(char* msg);
 T_pump_states get_pump_id_state_array(int id);
 int other_pump(int id);
 void init_pump_switching(int dual_mode_flags);
@@ -30,8 +31,10 @@ void get_LEVEL_string(char* result_string);
 void GetVolumeString(char *result_string);
 bool isPUMP_disabled_or_suspended();
 T_pump_states check_pump_state();
-int measure_flowrate();
+float measure_flowrate();
 time_t now_pump();
+int get_flow_count_increase();
+int get_flow_count_increase_local_pump(int pump_ID);
 
 typedef struct 
 {

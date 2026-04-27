@@ -2636,7 +2636,17 @@ void mainTask(void *pvParameters){
     }
 	
 	
-	int delta_volume_cnt=measure_flowrate();
+	int delta_volume_cnt=get_flow_count_increase();
+	if (running_pump_ID!=-1)
+	{
+		char message[32];   
+		float volume_rate_liter_per_min=measure_flowrate(running_pump_ID);
+		 //xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);
+	      //sprintf(message,"%0.1f l/min %0.1f l",volume_rate_liter_per_min,convertCNT2Liter(pump[running_pump_ID].daily_pump_flowmeter_counts-get_cnt_at_pump_start(running_pump_ID)));
+          sprintf(message,"%0.1f l/min",volume_rate_liter_per_min);
+		  //xSemaphoreGiveRecursive(pump_array_mutex);
+		Write_Msg_toDisplay(5,message);
+	}
 	
     if(measure_mode==VOLUME)
 		{

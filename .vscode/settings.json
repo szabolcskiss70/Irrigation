@@ -37,5 +37,6 @@
     "streambuf": "c",
     "tuple": "c",
     "type_traits": "c"
-  }
+  },
+  "idf.currentSetup": "C:/Espressif/frameworks/esp-idf-v5.3.1/"
 }

@@ -19,8 +19,12 @@ int my_lora_packet_rssi();
 float my_lora_packet_snr();
 void my_lora_send_packet(uint8_t *buf, int size);
 
-typedef enum {lget_pump_id_state,lget_flow_rate,lget_PCNT,lget_pump_id_struct};
+typedef enum {lget_pump_id_state,lget_CNT_increase,lget_PCNT,lget_flow_rate,lget_pump_id_struct};
 extern char *lora_cmd_str[lget_pump_id_struct+1];
+
+int sendcommandtoslave(char* msg);
+int getpumpbufferfromslave();
+int sendcommandtoslave(char* msg);
 
 
 

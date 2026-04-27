@@ -27,19 +27,7 @@ bool is_low_prio_pump_running()
  return (getPUMP_prio(running_pump_ID)?false:true);
 }
 
-int sendcommandtoslave(char* msg)
-{
- if (lora_comm_initialized)
-	{	
-   uint8_t lora_transmit_buf[256];
- 	 sprintf((char*)lora_transmit_buf,"IRRMCMD_%lu_%d:%s",xTaskGetTickCount(),strlen(msg),msg); 
-	 my_lora_send_packet(lora_transmit_buf,strlen((char*)lora_transmit_buf)); 
-   // (xQueueReceive(lora_ans_evt_queue, &retval, 5*1000/portTICK_PERIOD_MS )==pdPASS)    return (retval); //portMAX_DELAY
-   //else return (-1);
-   return 1;
-	}
-  else return (-1);
-}
+
 
 void gen_switch_pump_id_to_state(int id, T_pump_states new_state)
 {
@@ -138,37 +126,6 @@ static void pump_switching_task(void* pvParameters)
   }
   vTaskDelay(1*1000 / portTICK_PERIOD_MS);
  }
-}
-
-int getINTvaluefromslave(char* msg)
-{
- if (lora_comm_initialized)
-	{	
-   uint8_t lora_transmit_buf[256];
-   int retval; 
- 	 sprintf((char*)lora_transmit_buf,"IRRMGETI_%lu_%d:%s",xTaskGetTickCount(),strlen(msg),msg); 
-	 my_lora_send_packet(lora_transmit_buf,strlen((char*)lora_transmit_buf)); 
-   if (xQueueReceive(lora_ans_evt_queue, &retval, 5*1000/portTICK_PERIOD_MS )==pdPASS)    return (retval); //portMAX_DELAY
-   else return (0);
-	}
-  else return (0);
-}
-
-
-
-
-int getpumpbufferfromslave()
-{
- uint8_t lora_transmit_buf[256];
-	if (lora_comm_initialized)
-	{	
-   int payloadlength=0; 
- 	 sprintf((char*)lora_transmit_buf,"IRRMGETB_%lu_%d:%s",xTaskGetTickCount(),strlen(lora_cmd_str[lget_pump_id_struct]),lora_cmd_str[lget_pump_id_struct]); 
-	 my_lora_send_packet(lora_transmit_buf,strlen((char*)lora_transmit_buf)); 
-   if (xQueueReceive(lora_ans_evt_queue, &payloadlength, 5*1000/portTICK_PERIOD_MS )==pdPASS) return (payloadlength); //portMAX_DELAY
-   else return (-1);
-	}
-  else return -1;
 }
 
 
@@ -302,8 +259,25 @@ void clear_volumes_at_midnight()
 }
 
 
+int get_flow_count_increase()
+{
+  clear_volumes_at_midnight();
+  if(!get_remotePump(running_pump_ID)) return(get_flow_count_increase_local_pump(0));
+  else if (dual_mode_flags && (1<<CLONING)) 
+ { // value cloned from slave to pump_array[2]
+    if (!Cloned_buffer_valid) return 0;
+    return (0); //TODO: develop flow rate from cloning 
+ }
+ else if (dual_mode_flags && (1<<VIA_LORA_FUNC)) return (getINTvaluefromslave(lora_cmd_str[lget_CNT_increase]));
+ else return 0;
+}
 
-int measure_flowrate()
+
+
+
+
+
+float measure_flowrate()
 {
   clear_volumes_at_midnight();
   if(!get_remotePump(running_pump_ID)) return(measure_flowrate_on_local_pump(0));
@@ -312,7 +286,7 @@ int measure_flowrate()
     if (!Cloned_buffer_valid) return 0;
     return (0); //TODO: develop flow rate from cloning 
  }
- else if (dual_mode_flags && (1<<VIA_LORA_FUNC)) return (getINTvaluefromslave(lora_cmd_str[lget_flow_rate]));
+ else if (dual_mode_flags && (1<<VIA_LORA_FUNC)) return (getFloatvaluefromslave(lora_cmd_str[lget_flow_rate]));
  else return 0;
 }
 
