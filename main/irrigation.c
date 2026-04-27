@@ -1444,17 +1444,10 @@ int get_Channel_from_wildcarded(char wilcarded_topic[5][32])
 	return -1;
 }
 
-bool CHANNEL_schedule_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
+bool CHANNEL_schedule_CB(int ch,char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 {	
 	int period;	
-	int ch=get_Channel_from_wildcarded(wilcarded_topic);	
-	if (ch==-1) 
-	 {
-		sprintf(MQTT_BLE_answer,"Invalid channel in topic: %s ", ltopic);
-		return false;
-	 }
-			if (strstr(ltopic,"/SCHEDULE/?")!=NULL) report_scheduling(ch);	
-			else if (sscanf(wilcarded_topic[0],"SCHEDULE/PERIOD%d",&period)==1)
+	    	if (sscanf(wilcarded_topic[0],"SCHEDULE/PERIOD%d",&period)==1)
 			{
 			 int HH_on,MM_on,HH_off,MM_off;
 			 char weekdays[7];
@@ -1499,28 +1492,16 @@ bool CHANNEL_schedule_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_top
 			return true;
 		}
 
-bool CHANNEL_statistic_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])	
+bool CHANNEL_statistic_CB(int ch,char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])	
 {	
-	int ch=get_Channel_from_wildcarded(wilcarded_topic);
-    if (ch==-1) 
-	 {
-		sprintf(MQTT_BLE_answer,"Invalid channel in topic: %s ", ltopic);
-		return false;
-	 }
 	 MQTT_BLE_answer[0]=0;
 	 append_ontimes2string(ch);
 	 return true;
 }
 
-bool CHANNEL_TIMES_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])	
+bool CHANNEL_TIMES_CB(int ch,char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])	
 {	
-	int ch=get_Channel_from_wildcarded(wilcarded_topic);
-    if (ch==-1) 
-	 {
-		sprintf(MQTT_BLE_answer,"Invalid channel in topic: %s ", ltopic);
-		return false;
-	 }
-	 MQTT_BLE_answer[0]=0;
+		 MQTT_BLE_answer[0]=0;
 			for (int i=STARTED;i<=NOREQUEST;i++)
 			{
 				sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"CH:%s %s: %lld\n",channels[ch].Name,str_short_states[i],channels[ch].status_change_time[i]);
@@ -1602,16 +1583,9 @@ bool run_mode___CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][
 
 
 
-bool CHANNEL_request_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])	
+bool CHANNEL_request_CB(int ch,char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])	
 {
-	int ch=get_Channel_from_wildcarded(wilcarded_topic);
-    if (ch==-1) 
-	 {
-		sprintf(MQTT_BLE_answer,"Invalid channel in topic: %s ", ltopic);
-		return false;
-	 }	 
-	else
-	{
+	
 				int i;
 				ESP_LOGI(TAG, "CHANNEL/%s/request",channels[ch].Name);
 				if((ch>=0) && (ch<MAX_CHANNEL_NUM))
@@ -1633,20 +1607,13 @@ bool CHANNEL_request_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topi
 				 
 				}
 				sprintf(MQTT_BLE_answer,"%s {%s}", ltopic,str_states[channels[ch].channel_state]);  					 
-			}
-			return true;
+			    return true;
 }
 
-bool CHANNEL_PARAM_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
+bool CHANNEL_PARAM_CB(int ch,char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 {
 	printf("%s",wilcarded_topic[1]);
-	int ch=get_Channel_from_wildcarded(wilcarded_topic);
-    if (ch==-1) 
-	 {
-		sprintf(MQTT_BLE_answer,"Invalid channel in topic: %s ", ltopic);
-		return false;
-	 }
-
+	
     if (strcmp(wilcarded_topic[0],"PARAM/NAME")==0)
 	{
 			if ((strlen(ldata)>0) && (strlen(ldata)<=sizeof(channels[ch].Name)-1)) 
@@ -1668,11 +1635,19 @@ bool CHANNEL_PARAM_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[
 
 bool CHANNEL_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 {
- if (strcmp(wilcarded_topic[0],"REQUEST")==0) return (CHANNEL_request_CB(ltopic, ldata,  MQTT, wilcarded_topic));
- else  if (strcmp(wilcarded_topic[0],"STATISTIC")==0) return (CHANNEL_statistic_CB(ltopic, ldata,  MQTT, wilcarded_topic));
- else  if (strcmp(wilcarded_topic[0],"TIMES")==0) return (CHANNEL_TIMES_CB(ltopic, ldata,  MQTT, wilcarded_topic));
- else  if (strncmp(wilcarded_topic[0],"SCHEDULE/PERIOD",15)==0) return (CHANNEL_schedule_CB(ltopic, ldata,  MQTT, wilcarded_topic));
- else  if (strncmp(wilcarded_topic[0],"PARAM/",6)==0) return (CHANNEL_PARAM_CB(ltopic, ldata,  MQTT, wilcarded_topic));
+ int ch=get_Channel_from_wildcarded(wilcarded_topic);	
+ if (ch==-1) 
+	 {
+		sprintf(MQTT_BLE_answer,"Invalid channel in topic: %s ", ltopic);
+		return false;
+	 }
+
+ if (strcmp(wilcarded_topic[0],"REQUEST")==0) return (CHANNEL_request_CB(ch,ltopic, ldata,  MQTT, wilcarded_topic));
+ else  if (strcmp(wilcarded_topic[0],"STATISTIC")==0) return (CHANNEL_statistic_CB(ch,ltopic, ldata,  MQTT, wilcarded_topic));
+ else  if (strcmp(wilcarded_topic[0],"TIMES")==0) return (CHANNEL_TIMES_CB(ch,ltopic, ldata,  MQTT, wilcarded_topic));
+ else  if (strncmp(wilcarded_topic[0],"SCHEDULE/PERIOD",15)==0) return (CHANNEL_schedule_CB(ch,ltopic, ldata,  MQTT, wilcarded_topic));
+ else  if (strncmp(wilcarded_topic[0],"PARAM/",6)==0) return (CHANNEL_PARAM_CB(ch,ltopic, ldata,  MQTT, wilcarded_topic));
+ else  if (strncmp(wilcarded_topic[0],"SCHEDULE/?",10)==0) {report_scheduling(ch);	return true;}
  else return true;
 }
 

@@ -278,8 +278,8 @@ void GetPumpStatusString(int id, char* message, int buf_size)
     for (int state=PROT_T_TRIP;state<=P_UNDERVOLTAGE;state++) if(pump[id].suspend_reason & (1<<state)) {strcat(susp_reason_str," ");strcat(susp_reason_str,PUMP_status_str[state]);} 
     if (pump[id].GPIO_CNT!=-1) pcnt_unit_get_count(pump[id].pcnt_unit, &pump[id].daily_pump_flowmeter_counts);
     else pump[id].daily_pump_flowmeter_counts=0;
-    char *MsgFormat= "P%d: Status:%s, Daily Volume:%1.1fl, Tmax:%1.1fC° Imax:%1.1fA Ttrip:%1.1fC° Treset:%1.1fC° FlowRate_min:%ddl/min, restart delay:%dmin auto_switch_on:%d remote:%d, CNT@low_flow:%d susp_res:%s\n";
-    if (buf_size>strlen(MsgFormat)+16) sprintf(message,MsgFormat,id+1,PUMP_status_str[get_pump_id_state(id)],convertCNT2Liter(pump[id].daily_pump_flowmeter_counts),pump[id].T_max,pump[id].I_max,get_T_trip(id),get_T_reset(id),get_flow_rate_protection_limit_dl_per_min(id),get_restart_delay(id),get_autoSwitchON(id),get_remotePump(id),pump[id].Flow_CNT_at_err,susp_reason_str);
+    char *MsgFormat= "P%d: Status:%s, Daily Volume:%1.1fl, Tmax:%1.1fC° Imax:%1.1fA Ttrip:%1.1fC° Treset:%1.1fC° FlowRate_min:%ddl/min, restart delay:%dmin auto_switch_on:%d remote:%d, CNT@low_flow:%d susp_res:%s, PRIO:%s, AUTO_ON:%s, REMOTE:%s, SWITCH_BACK:%s\n";
+    if (buf_size>strlen(MsgFormat)+16) sprintf(message,MsgFormat,id+1,PUMP_status_str[get_pump_id_state(id)],convertCNT2Liter(pump[id].daily_pump_flowmeter_counts),pump[id].T_max,pump[id].I_max,get_T_trip(id),get_T_reset(id),get_flow_rate_protection_limit_dl_per_min(id),get_restart_delay(id),get_autoSwitchON(id),get_remotePump(id),pump[id].Flow_CNT_at_err,susp_reason_str,getPUMP_prio(id)?"Y":"N",get_autoSwitchON(id)?"Y":"N",get_remotePump(id)?"Y":"N",getPUMP_switchbackifavailable(id)?"Y":"N");
   xSemaphoreGiveRecursive(pump_array_mutex);
 }
 
@@ -457,7 +457,7 @@ bool getPUMP_switchbackifavailable(int id) {
   bool retval=pump[id].switchbackifavailable;
     xSemaphoreGiveRecursive(pump_array_mutex);
   return(retval);}
-void setPUMP_switchbackifavailable(int id, bool val) {xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);pump[id].prio=val;xSemaphoreGiveRecursive(pump_array_mutex);}
+void setPUMP_switchbackifavailable(int id, bool val) {xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);pump[id].switchbackifavailable=val;xSemaphoreGiveRecursive(pump_array_mutex);}
 
 bool get_autoSwitchON(int id) {
   xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);
