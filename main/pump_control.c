@@ -411,18 +411,26 @@ float measure_flowrate_on_local_pump(int pump_ID)
 bool check_flowrate(int pump_id,int looptime_ms) 
 {
   xSemaphoreTakeRecursive(pump_array_mutex, portMAX_DELAY);  
+    bool skip_check=false;
     int delta_cnt=0;
-    static int lastCNT=-162;
+    static int lastCNT=-1;
     int actCNT;
+    int limit;
     ESP_ERROR_CHECK(pcnt_unit_get_count(pump[pump_id].pcnt_unit, &actCNT));
     delta_cnt=actCNT-lastCNT;
+    if ((lastCNT==-1) || (delta_cnt<0)) skip_check=true; // first check after midnight or restart
+
     lastCNT=actCNT;
     
-    int limit=pump[pump_id].flow_rate_protection_limit_dl_per_min/10*YF_DN32_PULSE_PER_LITER/60*looptime_ms/1000;
-    ESP_LOGI("DEBUG_TASK", "delta_cnt:%d limit:%d, looptime:%dms",delta_cnt,limit,looptime_ms);
-    if(delta_cnt<limit) pump[pump_id].Flow_CNT_at_err=delta_cnt;
+    if (skip_check==false) 
+    {
+     limit=pump[pump_id].flow_rate_protection_limit_dl_per_min/10*YF_DN32_PULSE_PER_LITER/60*looptime_ms/1000;
+     ESP_LOGI("DEBUG_TASK", "delta_cnt:%d limit:%d, looptime:%dms",delta_cnt,limit,looptime_ms);
+     if(delta_cnt<limit) pump[pump_id].Flow_CNT_at_err=delta_cnt;
+    }
   xSemaphoreGiveRecursive(pump_array_mutex);
-  return (delta_cnt>=limit);
+   if (skip_check) return true;
+   return (delta_cnt>=limit);
 }
 
 
