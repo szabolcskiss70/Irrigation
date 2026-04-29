@@ -1436,8 +1436,8 @@ bool ACS71020_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32
 int get_Channel_from_wildcarded(char wilcarded_topic[5][32])
 {
 	int ch;
-    if ((strlen(wilcarded_topic[1])==1) && (sscanf(wilcarded_topic[1],"%d",&ch)==1) && (ch>0) && (ch<=MAX_CHANNEL_NUM)) return (ch-1);
-     for (ch=0;ch<MAX_CHANNEL_NUM;ch++)
+    if ((strlen(wilcarded_topic[1])==1) && (sscanf(wilcarded_topic[1],"%d",&ch)==1) && (ch>0) && (ch<=PARAM_VALUES[pCHANNEL_NUM])) return (ch-1);
+     for (ch=0;ch<PARAM_VALUES[pCHANNEL_NUM];ch++)
 	 {
 	  if(strcmp(channels[ch].Name,wilcarded_topic[1])==0) return ch;
      }
@@ -1455,7 +1455,7 @@ bool CHANNEL_schedule_CB(int ch,char* ltopic, char* ldata, bool MQTT,char wilcar
 			 int volume=0;
 			 period--;
 			 ESP_LOGI(TAG, "CH:%d,period:%d",ch,period);
-			 if((ch>=0) && (ch<MAX_CHANNEL_NUM) && (period>=0) && (period<PERIODS))
+			 if((ch>=0) && (ch<PARAM_VALUES[pCHANNEL_NUM]) && (period>=0) && (period<PERIODS))
 			 {
 			  if(sscanf(ldata,"%2d:%2d-%2d:%2d [%c%c%c%c%c%c%c] %d %d",&HH_on,&MM_on,&HH_off,&MM_off,&weekdays[0],&weekdays[1],&weekdays[2],&weekdays[3],&weekdays[4],&weekdays[5],&weekdays[6],&duration,&volume)==13)
 			  {
@@ -1516,7 +1516,7 @@ bool restart_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32]
                 if(strcmp(ldata,"ESP")==0) 	
 				{
 					prevhour=0;
-					for(int ch=0;ch<MAX_CHANNEL_NUM;ch++) 
+					for(int ch=0;ch<PARAM_VALUES[pCHANNEL_NUM];ch++) 
 					{
 						switch_channel(ch,DISABLED);
 						vTaskDelay(1*1000 / portTICK_PERIOD_MS);
@@ -1547,7 +1547,7 @@ bool temp___CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 bool param_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])			
 			{
 				int intval;
-				  if(sscanf(ldata,"maintopic:%s",maintopic)==1) 
+				  if(sscanf(ldata,"MAIN_TOPIC:%s",maintopic)==1) 
 				  {	 
 				    sprintf(MQTT_BLE_answer,"%s {%s}", "maintopic",maintopic); 
 				  }
@@ -1588,7 +1588,7 @@ bool CHANNEL_request_CB(int ch,char* ltopic, char* ldata, bool MQTT,char wilcard
 	
 				int i;
 				ESP_LOGI(TAG, "CHANNEL/%s/request",channels[ch].Name);
-				if((ch>=0) && (ch<MAX_CHANNEL_NUM))
+				if((ch>=0) && (ch<PARAM_VALUES[pCHANNEL_NUM]))
 				{char unit;
 				 for(i=STARTED;i<=NOREQUEST;i++)
 				 {
@@ -1679,7 +1679,7 @@ bool LIST_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 	if (strcmp(ldata,"CHANNELS")==0)
 	{ 	
 	 MQTT_BLE_answer[0]=0;
-	 for(int ch=0;ch<MAX_CHANNEL_NUM;ch++)
+	 for(int ch=0;ch<PARAM_VALUES[pCHANNEL_NUM];ch++)
 	 {
 	  sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"CH%d %8s:%16s (Pump:%d)\n",ch+1,channels[ch].Name,str_states[channels[ch].channel_state],channels[ch].assigned_pump);	
       append_ontimes2string(ch);		
@@ -1715,7 +1715,8 @@ IRRIGATION/FIRMWARE/URL {URL} -set new URL for OTA\n\
 IRRIGATION/FIRMWARE/SELECT_URL {?:G:S:N} - ?: query, S:szabolcskiss; G:github; N:new given by FIRMWARE/URL \n\
 IRRIGATION/FIRMWARE/VERSION  {version:?} -set new version for OTA:query\n\
 IRRIGATION/FIRMWARE/ROLLBACK {ROLLBACK:CANCEL_ROLLBACK} -keep or rollback OTA update\n\
-IRRIGATION/DEBUG {REDIRECT ON|REDIRECT OFF|LEVEL x|ERASE LOG|GET NEXT|VALVE CHECK) - debug features";		
+IRRIGATION/DEBUG {REDIRECT ON|REDIRECT OFF|LEVEL x|ERASE LOG|GET NEXT|VALVE CHECK) - debug features\n\	
+IRRIGATION/PARAM {MAIN_TOPIC|RUN_MODE|PUMP_NUM|CHANNEL_NUM|ACS71020_ADDR|SLAVE_RELAY|FIRSTRUN|DUAL_MODE : value} (default RUN_MODEs: 8191, 2607)";
 my_esp_mqtt_client_publish(mqtt_client, "MEASURE/commands1", message, 0, 0, 0);   //Qos=0; retain=0				 
 vTaskDelay(1*1000 / portTICK_PERIOD_MS);		  
 
@@ -1789,7 +1790,7 @@ bool Process_EVENT_DATA(char* ltopic, char* ldata, bool MQTT)
 	char publish_topic[128];
 	char wilcarded_topic[5][32];
  
-
+            *MQTT_BLE_answer=0;
             for (int i=0;i<sizeof(subscribe_topics)/4;i++)
 			{
               if (is_topic_equal(ltopic,subscribe_topics[i],MQTT,wilcarded_topic)) 
@@ -2446,7 +2447,7 @@ void testValveSwitching()
 
 bool isSingleChannelTurnedON(int ch)
 {
- for (int i=0; i<MAX_CHANNEL_NUM; i++)
+ for (int i=0; i<PARAM_VALUES[pCHANNEL_NUM]; i++)
  {
   if ((ch!=i) && channels[i].Channel_pump_ON)	return false; 
  }	 
@@ -2473,7 +2474,7 @@ void mainTask(void *pvParameters){
   xEventGroupWaitBits(s_wifi_event_group, MQTT_CONNECTED_BIT, false, false, 30*1000 / portTICK_PERIOD_MS); 
   
 
-   for(ch=0;ch<MAX_CHANNEL_NUM;ch++) 
+   for(ch=0;ch<PARAM_VALUES[pCHANNEL_NUM];ch++) 
    {
 	if(channels[ch].channel_disabled) switch_channel(ch,DISABLED);
 	else  switch_channel(ch,REBOOTED);
@@ -2501,7 +2502,7 @@ void mainTask(void *pvParameters){
 	{
 	 my_esp_mqtt_client_publish(mqtt_client, "FIRMWARE/UPDATE", "started", 0, 0, 0);   //Qos=0; retain=0	
 	 
-	 for(ch=0;ch<MAX_CHANNEL_NUM;ch++) switch_channel(ch,DISABLED);
+	 for(ch=0;ch<PARAM_VALUES[pCHANNEL_NUM];ch++) switch_channel(ch,DISABLED);
 			
 	 break;
 	}
@@ -2528,7 +2529,7 @@ void mainTask(void *pvParameters){
 		time_t now2;
 	    time(&now2);
 		
-		for(ch=0;ch<MAX_CHANNEL_NUM;ch++) 
+		for(ch=0;ch<PARAM_VALUES[pCHANNEL_NUM];ch++) 
 		{
 			channels[ch].prev_daily_period_ontimes=0; //erase ontime at daychange
 			channels[ch].period_volume=0; //erase volume at daychange
@@ -2556,7 +2557,7 @@ void mainTask(void *pvParameters){
 	 }
 	
 	 MQTT_BLE_answer[0]=0;	
-	 for(i=0;i<MAX_CHANNEL_NUM;i++) append_ontimes2string(i);
+	 for(i=0;i<PARAM_VALUES[pCHANNEL_NUM];i++) append_ontimes2string(i);
 	 my_esp_mqtt_client_publish(mqtt_client, "REPORT/ONTIME", MQTT_BLE_answer, 0, 0, 0);   //Qos=0; retain=0
 
 	 
@@ -2567,7 +2568,7 @@ void mainTask(void *pvParameters){
 	 prevhour=hour;
 	}
 	
-	for(ch=0;ch<MAX_CHANNEL_NUM;ch++) //auto switch off of manually on channels
+	for(ch=0;ch<PARAM_VALUES[pCHANNEL_NUM];ch++) //auto switch off of manually on channels
 	{		
      if(channels[ch].manual_mode)
 	 {
@@ -2579,7 +2580,7 @@ void mainTask(void *pvParameters){
 	 }
 	}
 
-    for(ch=0;ch<MAX_CHANNEL_NUM;ch++) //manual switches
+    for(ch=0;ch<PARAM_VALUES[pCHANNEL_NUM];ch++) //manual switches
 	{		
      if (channels[ch].manual_change_request!=NOREQUEST)
 	 {
@@ -2635,7 +2636,7 @@ void mainTask(void *pvParameters){
 		 
 	if (delta_volume_cnt>0) //waterflow
 	{
-	 for(ch=0; ch<MAX_CHANNEL_NUM;ch++) 
+	 for(ch=0; ch<PARAM_VALUES[pCHANNEL_NUM];ch++) 
 	 {
 		 if (isSingleChannelTurnedON(ch)) {channels[ch].daily_volume+=delta_volume_cnt;channels[ch].period_volume+=delta_volume_cnt;} 
 		 else
@@ -2660,7 +2661,7 @@ void mainTask(void *pvParameters){
 	
 	if (PARAM_VALUES[pRUN_MODE]  & (1<<HANDLE_SCHEDULED))
 	{
-	for(ch=0;ch<MAX_CHANNEL_NUM;ch++)
+	for(ch=0;ch<PARAM_VALUES[pCHANNEL_NUM];ch++)
 	{
 	 if (channels[ch].channel_disabled) continue; 	
 	 for(i=0;i<PERIODS;i++)
@@ -2707,7 +2708,7 @@ void mainTask(void *pvParameters){
 	switch (check_pump_state(now))
 	{
 	 case P_SUSPENDED:
-	      for(ch=0;ch<MAX_CHANNEL_NUM;ch++) 
+	      for(ch=0;ch<PARAM_VALUES[pCHANNEL_NUM];ch++) 
 		  { 
 	        switch(channels[ch].channel_state)
 			{ //switch active channels to SUSPENDED
@@ -2721,7 +2722,7 @@ void mainTask(void *pvParameters){
 		  Write_Msg_toDisplay(2,"pump suspended");
 		  break;
      case P_DELAY:
-	      for(ch=0;ch<MAX_CHANNEL_NUM;ch++)
+	      for(ch=0;ch<PARAM_VALUES[pCHANNEL_NUM];ch++)
 			 { 
 			  if(channels[ch].channel_state==SUSPENDED) 
 			   {				   
@@ -2730,7 +2731,7 @@ void mainTask(void *pvParameters){
 			 } 
 	      break;
      case P_RESUMED:
-	 		for(ch=0;ch<MAX_CHANNEL_NUM;ch++)
+	 		for(ch=0;ch<PARAM_VALUES[pCHANNEL_NUM];ch++)
 			{ 
 			 switch(channels[ch].channel_state)
 			 {
@@ -2754,10 +2755,10 @@ void mainTask(void *pvParameters){
 	{
 	
 		 char message[32]="";
-		 for(ch=0;ch<MAX_CHANNEL_NUM;ch++)
+		 for(ch=0;ch<PARAM_VALUES[pCHANNEL_NUM];ch++)
 		 {
 		  strcat(message,str_short_states[channels[ch].channel_state]);
-	      if (ch<MAX_CHANNEL_NUM-1) strcat(message," ");
+	      if (ch<PARAM_VALUES[pCHANNEL_NUM]-1) strcat(message," ");
 		 }
 		 Write_Msg_toDisplay(0,message);
 		  
@@ -3280,7 +3281,7 @@ void Save_data_to_NVS()
    //nvs_set_str(nvs_handle, "maintopic", maintopic);
   // for (int i=pRUN_MODE;i<pLAST;i++) nvs_set_i32(nvs_handle, PARAM_NAMES[i],PARAM_VALUES[i]);
    
-   for (ch=0;ch<2;ch++)
+   for (ch=0;ch<MAX_PUMP_NUM;ch++)
    {
      char keyName[32];
 
@@ -3316,7 +3317,7 @@ void Save_data_to_NVS()
 
    }
 
-   for (ch=0;ch<MAX_CHANNEL_NUM;ch++)
+   for (ch=0;ch<PARAM_VALUES[pCHANNEL_NUM];ch++)
    {
 	 char keyName[32];   //CHx_x 
 	 sprintf(keyName,"CH%1.1d_NAME",ch);
