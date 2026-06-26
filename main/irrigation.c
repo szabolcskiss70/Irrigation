@@ -176,8 +176,8 @@ int  PARAM_VALUES[pLAST-pRUN_MODE]={3,1,3,ACS71020_address_default,-1,1,0};
 int PARAM_LL[pLAST-pRUN_MODE]={3,0,0,ACS71020_address_min,-1,0,0};
 int PARAM_UL[pLAST-pRUN_MODE]={(1<<(LAST_MODE))-1,MAX_PUMP_NUM,MAX_CHANNEL_NUM,ACS71020_address_max,1,1,(1<<modeLAST)-1};
 
-//PARAM_VALUES[pDUAL_MODE]
 
+wifi_config_t wifi_config;
 static const int WIFI_CONNECTED_BIT = BIT0;
 static const int WIFI_FAIL_BIT = BIT1;
 static const int MQTT_CONNECTED_BIT = BIT3;
@@ -185,7 +185,6 @@ static EventGroupHandle_t s_wifi_event_group;
 
 
 T_measure_mode measure_mode=OFF;
-//int pump_restart_delay=10;
 
 
 int SNTP_synchronized=0;
@@ -1002,7 +1001,7 @@ bool DEBUG_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 	 Erase_NVS();
 	 strcpy(MQTT_BLE_answer,"NVS erased");
 	}
-	else if ((sscanf(ldata,"LEVEL %d",&log_level)==1) &&  (log_level<=5) &&  (log_level>=0)) 
+	else if ((sscanf(ldata,"SET LOG LEVEL=%d",&log_level)==1) &&  (log_level<=5) &&  (log_level>=0)) 
 	{
 		esp_log_level_set("*", log_level);
 		sprintf(MQTT_BLE_answer,"log level=%d",log_level);
@@ -1014,10 +1013,6 @@ bool DEBUG_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 	else if (strcmp(ldata,"VALVE CHECK")==0)
 	{
      testValveSwitching();
-	}
-	else if (strcmp(ldata,"DETECT ACS71020")==0)
-	{
-		sprintf(MQTT_BLE_answer,"ACS71020 address:%d",detect_ACS71020_Address());	
 	}
 	else  strcpy(MQTT_BLE_answer,"Invalid parameter!");
 	return true;
@@ -1429,6 +1424,7 @@ bool ACS71020_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32
 {
  if (strcmp(wilcarded_topic[0],"READ")==0) return (ACS71020_read_CB(ltopic, ldata, MQTT,wilcarded_topic));
  else  if (strcmp(wilcarded_topic[0],"WRITE")==0) return (ACS71020_write_CB(ltopic, ldata, MQTT,wilcarded_topic));
+ else  if (strcmp(wilcarded_topic[0],"DETECT")==0) 	{sprintf(MQTT_BLE_answer,"ACS71020 address:%d",detect_ACS71020_Address());return true;}
  else return true;
 }
 
@@ -1547,16 +1543,37 @@ bool temp___CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 bool param_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])			
 			{
 				int intval;
-				  if(sscanf(ldata,"MAIN_TOPIC:%s",maintopic)==1) 
-				  {	 
+				  //if(sscanf(ldata,"MAIN_TOPIC:%s",maintopic)==1) 
+				  if ((strcmp(wilcarded_topic[0],"MAIN_TOPIC")==0) && (sscanf(ldata,"%s",maintopic)==1) )
+				   {	 
 				    sprintf(MQTT_BLE_answer,"%s {%s}", "maintopic",maintopic); 
-				  }
+				   }
+                  else if (strcmp(wilcarded_topic[0],"SSID")==0)
+				   {
+					memcpy(wifi_config.sta.ssid, ldata, sizeof(wifi_config.sta.ssid));
+					printf("SSID:%s stored.\n",wifi_config.sta.ssid);
+					sprintf(MQTT_BLE_answer,"SSID:%s stored.\n",wifi_config.sta.ssid);
+				   }
+				  else if (strcmp(wilcarded_topic[0],"PWD")==0)
+				   {
+					printf("Password:%s\n",ldata);
+						memcpy(wifi_config.sta.password, ldata, sizeof(wifi_config.sta.password));
+						Write_Msg_toDisplay(1,(char*)wifi_config.sta.ssid);
+						Write_Msg_toDisplay(2,(char*)wifi_config.sta.password);
+						vTaskDelay(3*1000 / portTICK_PERIOD_MS);
+						esp_wifi_disconnect() ;
+						esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config);
+						esp_wifi_set_storage(WIFI_STORAGE_FLASH); 
+						esp_wifi_connect();
+						sprintf(MQTT_BLE_answer,"PWD:%s",wifi_config.sta.password);
+				   }
 				  else
                   for (int i=pRUN_MODE;i<pLAST;i++)
 				  {
-					char Variable_name_and_format[32];
-					sprintf(Variable_name_and_format,"%s:%%d",PARAM_NAMES[i]);
-                    if(sscanf(ldata,Variable_name_and_format,&intval)==1) 
+					//char Variable_name_and_format[32];
+					//sprintf(Variable_name_and_format,"%s:%%d",PARAM_NAMES[i]);
+                    //if(sscanf(ldata,Variable_name_and_format,&intval)==1) 
+					if ((strcmp(wilcarded_topic[0],PARAM_NAMES[i])==0) && (sscanf(ldata,"%d",&intval)==1) )
 					{
 				     if ((intval>=PARAM_LL[i]) && (intval<=PARAM_UL[i])) 
 					 {
@@ -1628,7 +1645,12 @@ bool CHANNEL_PARAM_CB(int ch,char* ltopic, char* ldata, bool MQTT,char wilcarded
 	if (strcmp(wilcarded_topic[0],"PARAM/PUMP")==0)
 	{
 	   int intval;
-	   if ((sscanf(ldata,"%d",&intval)==1) && ((intval>=PUMP1) && (intval<=BOTH))) channels[ch].assigned_pump=intval;
+	   if ((sscanf(ldata,"%d",&intval)==1) && ((intval>PUMP1) && (intval<=BOTH+1))) 
+	   {
+		channels[ch].assigned_pump=intval-1;
+		Save_data_to_NVS();
+	   }
+	   else sprintf(MQTT_BLE_answer,"Invalid value (1..3) {%s}", ldata);
 	}
 	return true;
 }	
@@ -1670,7 +1692,12 @@ bool CMD_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
  if (strcmp(wilcarded_topic[0],"RESTART")==0) return(restart_CB(ltopic,  ldata,  MQTT, wilcarded_topic));
  else if (strcmp(wilcarded_topic[0],"MEAS_MODE")==0) return(measure_mode_CB(ltopic,  ldata,  MQTT, wilcarded_topic));
  else if (strcmp(wilcarded_topic[0],"TO_SLAVE")==0) return(TO_SLAVE_CB(ltopic,  ldata,  MQTT, wilcarded_topic));	
- else return true;
+ else if (strcmp(wilcarded_topic[0],"SAVE_NVS")==0)
+    {
+        Save_data_to_NVS();
+		sprintf(MQTT_BLE_answer,"SAVE_NVS:%s","Done");
+    }
+ return true;
 }
 
 
@@ -1681,7 +1708,7 @@ bool LIST_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 	 MQTT_BLE_answer[0]=0;
 	 for(int ch=0;ch<PARAM_VALUES[pCHANNEL_NUM];ch++)
 	 {
-	  sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"CH%d %8s:%16s (Pump:%d)\n",ch+1,channels[ch].Name,str_states[channels[ch].channel_state],channels[ch].assigned_pump);	
+	  sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"CH%d %8s:%16s (Pump:%d)\n",ch+1,channels[ch].Name,str_states[channels[ch].channel_state],channels[ch].assigned_pump+1);	
       append_ontimes2string(ch);		
 	 }
     } 
@@ -1709,78 +1736,91 @@ bool LIST_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 
 
 bool help_CB(char* ltopic, char* ldata, bool MQTT,char *wilcarded_topic)
-{
- char *message="IRRIGATION/HELP show the available commands -Topic {Message}\n\
-IRRIGATION/FIRMWARE/URL {URL} -set new URL for OTA\n\
-IRRIGATION/FIRMWARE/SELECT_URL {?:G:S:N} - ?: query, S:szabolcskiss; G:github; N:new given by FIRMWARE/URL \n\
-IRRIGATION/FIRMWARE/VERSION  {version:?} -set new version for OTA:query\n\
-IRRIGATION/FIRMWARE/ROLLBACK {ROLLBACK:CANCEL_ROLLBACK} -keep or rollback OTA update\n\
-IRRIGATION/DEBUG {REDIRECT ON|REDIRECT OFF|LEVEL x|ERASE LOG|GET NEXT|VALVE CHECK) - debug features\n\	
-IRRIGATION/PARAM {MAIN_TOPIC|RUN_MODE|PUMP_NUM|CHANNEL_NUM|ACS71020_ADDR|SLAVE_RELAY|FIRSTRUN|DUAL_MODE : value} (default RUN_MODEs: 8191, 2607)";
-my_esp_mqtt_client_publish(mqtt_client, "MEASURE/commands1", message, 0, 0, 0);   //Qos=0; retain=0				 
-vTaskDelay(1*1000 / portTICK_PERIOD_MS);		  
-
-message="IRRIGATION/CHANNEL/x/REQUEST {STARTED,RESUMED,INIT,ENABLED,DISABLED,SUSPENDED,DELAY,FINISHED,END,IDLE,REBOOTED,NOREQUEST} -set new state\n\
-IRRIGATION/CHANNEL/x/SCHEDULE/PERIODx {10:00-12:00 [+++++++] 30 1000} -add new schedule period 30min 1000l\n\
-IRRIGATION/CHANNEL/x/SCHEDULE/? {}   -list all programmed periods\n\
-IRRIGATION/CHANNEL/x/STATISTIC {} -get statistic\n\
-IRRIGATION/CHANNEL/x/PARAM/NAME {new name} -set channel name\n\
-IRRIGATION/CHANNEL/x/PARAM/PUMP {0|1|2} -set assigned pump 2:BOTH\n\
-IRRIGATION/PUMP/+/REQUEST +:PRIO|1|2 {ON|OFF|DISABLE|ENABLE|SET_PRIO|SET_SWITCHBACK|DEL_SWITCHBACK} -switch PUMP ON|OFF\n\
-IRRIGATION/PUMP/x/PARAM/SET_AUTO_SWITCH_ON,DEL_AUTO_SWITCH_ON|SET_REMOTE_PUMP|SET_REMOTE_PUMP|SET_DEFAULT {}\n\
-IRRIGATION/PUMP/x/PARAM/FLOW_RATE_MIN|T_TRIP,T_RESET {value} -set auto ON";
-my_esp_mqtt_client_publish(mqtt_client, "MEASURE/commands2", message, 0, 0, 0);   //Qos=0; retain=0				 
-vTaskDelay(1*1000 / portTICK_PERIOD_MS);	
-message="IRRIGATION/PUMP/x/PARAM/RESTART_DELAY {10min} -set pump restart delay\n\
-IRRIGATION/VAL/LEVEL {} -query water level\n\
-IRRIGATION/VAL/TIME {} -query TIME\n\
-IRRIGATION/VAL/TEMP {} -query temperature sensor\n\
-IRRIGATION/VAL/PUMP {} -query pump status\n\
-IRRIGATION/CMD/MEAS_MODE {POWER:LEVEL:STACK:CT:LOG:VOLUME:OFF}\n\
-IRRIGATION/CMD/RESTART {ESP:WIFI} -force restart of ESP32 or WIFI dongle\n\
-IRRIGATION/CMD/TO_SLAVE {topic=value} -send topic to other esp32 via LoRa\n\
-IRRIGATION/ACS71020/READ {0xhex_address}\n\
-IRRIGATION/ACS71020/WRITE {0xhex_address=0xhex_value}\n\	
-IRRIGATION/LIST {CHANNELS|LOG|IRR|LORA}";	
-			
-my_esp_mqtt_client_publish(mqtt_client, "MEASURE/commands3", message, 0, 0, 0);   //Qos=0; retain=0	
-					
-				 if(!MQTT) 
-				 {
-
-					message="help show the available commands -Topic {Message}\n\
-SSID {new SSID} - store new SSID \n\
-PWD  {new PASSWORD} -sore new PAssword\n\
-SAVE_NVS {} - save permanent data to NVS\n\
-RUN_MODE {} -new runmode:{USE_BLE,USE_WIFI,USE_ACS71020,MAIN_TASK,TEMPSENSOR,CURRENTSENSOR,MEASURE_LEVEL,MEASURE_POWER,POWERMETER_TASK} \n\
-FIRMWARE/URL {URL} -set new URL for OTA\n\
+{//"LIFE" ,"FIRMWARE/#","CHANNEL/+/#"     ,"CMD/#" ,"VAL/#" ,"ACS71020/#"  ,"HELP" ,"PUMP/+/REQUEST","PARAM" ,"LIST","DEBUG","PUMP/+/PARAM/#"
+ char *message="HELP {FIRMWARE|CHANNEL|VAL|PUMP|PARAM|CMD|ACS71020|LIST|DEBUG|WIFI} show the available sub help";
+ if (strcmp(ldata,"FIRMWARE")==0)
+ {
+  *message="FIRMWARE/URL {URL} -set new URL for OTA\n\
 FIRMWARE/SELECT_URL {?:G:S:N} - ?: query, S:szabolcskiss; G:github; N:new given by FIRMWARE/URL \n\
 FIRMWARE/VERSION  {version:?} -set new version for OTA:query\n\
-FIRMWARE/ROLLBACK {ROLLBACK:CANCEL_ROLLBACK} -keep or rollback OTA update\n\
-CHANNEL/x/REQUEST {STARTED,RESUMED,INIT,ENABLED,DISABLED,SUSPENDED,DELAY,FINISHED,END,IDLE,REBOOTED,NOREQUEST} -set new state\n\
-CHANNEL/x/SCHEDULE/PERIODx {10:00-12:00 [+++++++] 30 2000} -add new schedule period 30min 2000l\n\
+FIRMWARE/ROLLBACK {ROLLBACK:CANCEL_ROLLBACK} -keep or rollback OTA update";
+ }
+ else if (strcmp(ldata,"CHANNEL")==0)
+{
+ *message="CHANNEL/x/REQUEST {STARTED,RESUMED,INIT,ENABLED,DISABLED,SUSPENDED,DELAY,FINISHED,END,IDLE,REBOOTED,NOREQUEST} -set new state\n\
+CHANNEL/x/SCHEDULE/PERIODx {10:00-12:00 [+++++++] 30 1000} -add new schedule period 30min 1000l\n\
 CHANNEL/x/SCHEDULE/? {}   -list all programmed periods\n\
 CHANNEL/x/STATISTIC {} -get statistic\n\
-PUMP/+/REQUEST +:PRIO|1|2 {ON|OFF|DISABLE|ENABLE|SET_PRIO|SET_SWITCHBACK|DEL_SWITCHBACK} -switch PUMP ON|OFF\n\
-pump_restart_delay {10min} -set pump restart delay\n\
-CMD/LEVEL {} -query water level\n\
-CMD/TIME {} -query TIME\n\
-CMD/TEMP {} -query temperature sensor\n\
-MEAS_MODE {POWER:LEVEL:STACK:CT:LOG:VOLUME:OFF}\n\
+CHANNEL/x/PARAM/NAME {new name} -set channel name\n\
+CHANNEL/x/PARAM/PUMP {1|2|3} -set assigned pump 3:BOTH";
+}
+else if (strcmp(ldata,"VAL")==0)
+{
+*message="VAL/LEVEL {} -query water level\n\
+VAL/TIME {} -query TIME\n\
+VAL/TEMP {} -query temperature sensor\n\
+VAL/PUMP {} -query pump status";
+}
+else if (strcmp(ldata,"PUMP")==0)
+{
+*message="PUMP/+/REQUEST +:PRIO|1|2 {ON|OFF|DISABLE|ENABLE|SET_PRIO|SET_SWITCHBACK|DEL_SWITCHBACK} -switch PUMP ON|OFF\n\
+PUMP/x/PARAM/SET_AUTO_SWITCH_ON,DEL_AUTO_SWITCH_ON|SET_REMOTE_PUMP|SET_REMOTE_PUMP|SET_DEFAULT {}\n\
+PUMP/x/PARAM/FLOW_RATE_MIN|T_TRIP,T_RESET {value} -set auto ON\n\
+PUMP/x/PARAM/RESTART_DELAY {10min} -set pump restart delay";
+}
+else if (strcmp(ldata,"PARAM")==0)
+{
+*message="PARAM/{WIFI/SSID|WIFI/PWD|MAIN_TOPIC|RUN_MODE|PUMP_NUM|CHANNEL_NUM|ACS71020_ADDR|SLAVE_RELAY|FIRSTRUN|DUAL_MODE} {value}\n\
+info: RUN_MODES:{USE_BLE,USE_WIFI,USE_ACS71020,MAIN_TASK,HANDLE_SCHEDULED,MOTOR_CURRENT_PROT,TEMPSENSOR,CURRENTSENSOR,MEASURE_LEVEL,MEASURE_POWER,POWERMETER_TASK,USE_LORA,CLONE_TASK}\n\
+(default RUN_MODEs: 8191, 2607)";
+}
+else if (strcmp(ldata,"CMD")==0)
+{
+*message="CMD/MEAS_MODE {POWER:LEVEL:STACK:CT:LOG:VOLUME:OFF}\n\
 CMD/RESTART {ESP:WIFI} -force restart of ESP32 or WIFI dongle\n\
-ACS71020/READ {0xhex_address} \n\
-ACS71020/WRITE {0xhex_address=0xhex_value}";	
-sprintf(MQTT_BLE_answer,"%s", message); 
+CMD/TO_SLAVE {topic=value} -send topic to other esp32 via LoRa\n\
+SAVE_NVS {}";
+}
+else if (strcmp(ldata,"ACS71020")==0)
+{
+*message="ACS71020/READ {0xhex_address}\n\
+ACS71020/WRITE {0xhex_address=0xhex_value}\n\
+ACS71020/DETECT {} - detect chip addres";
+}
+else if (strcmp(ldata,"DEBUG")==0)
+{
+*message="DEBUG {REDIRECT ON|REDIRECT OFF|SET LOG LEVEL:x|ERASE LOG|ERASE LOG|GET NEXT|VALVE CHECK) - debug features";
+}
+else if (strcmp(ldata,"LIST")==0)
+{
+*message="LIST {CHANNELS|LOG|IRR|LORA}";	
+}
+else if (strcmp(ldata,"WIFI")==0)
+{
+*message="SSID {new SSID} - store new SSID \n\
+PWD  {new PASSWORD} -sore new PAssword";	
+}
+
+
+		
+my_esp_mqtt_client_publish(mqtt_client, "HELP/HELP", message, 0, 0, 0);   //Qos=0; retain=0	
+					
+if(!MQTT) 
+{
+ *message="HELP={FIRMWARE|CHANNEL|VAL|PUMP|PARAM|CMD|ACS71020|LIST|DEBUG|WIFI} show the available sub help\n\
+ SAVE_NVS {} - save permanent data to NVS";
+ sprintf(MQTT_BLE_answer,"%s", message); 
  }
 				
 return true;
 }
 
+
 //char* subscribe_topics[]=                   {"LIFE" ,"FIRMWARE/URL" ,"FIRMWARE/SELECT_URL" ,"FIRMWARE/VERSION" ,"FIRMWARE/ROLLBACK" ,"CHANNEL/+/REQUEST"      ,"CHANNEL/+/STATISTIC"      ,"CHANNEL/+/SCHEDULE/#"    ,"RESTART" ,"MEASURE_MODE" ,"LEVEL/?" ,"TIME/?"  ,"ACS71020/READ" ,"ACS71020/WRITE" ,"TEMP/?" ,"HELP" ,"PUMP/+/REQUEST" ,"PUMP/?" ,"PARAM" ,"RUN_MODE/?","LIST","CHANNEL/+/PARAM/#","CHANNEL/+/TIMES","DEBUG","PUMP/+/PARAM/#","TO_SLAVE"};
 //T_MQTT_Sub_Callback *MQTT_Sub_Callbacks[]=  {LIFE_CB,FIRMWARE_URL_CB,FIRMWARE_SELECT_URL_CB,FIRMWARE_VERSION_CB,FIRMWARE_ROLLBACK_CB,CHANNEL_request_CB,CHANNEL_statistic_CB,CHANNEL_schedule_CB,restart_CB,measure_mode_CB,LEVEL___CB,TIME___CB,ACS71020_read_CB,ACS71020_write_CB,temp___CB,help_CB,PUMP_CB,PUMP___CB,param_CB,run_mode___CB,LIST_CB,CHANNEL_PARAM_CB,CHANNEL_TIMES_CB,DEBUG_CB,PUMP_PARAM_CB,TO_SLAVE_CB}; 
 
 
-char* subscribe_topics[]=                   {"LIFE" ,"FIRMWARE/#","CHANNEL/+/#"     ,"CMD/#" ,"VAL/#" ,"ACS71020/#"  ,"HELP" ,"PUMP/+/REQUEST","PARAM" ,"LIST","DEBUG","PUMP/+/PARAM/#"};
+char* subscribe_topics[]=                   {"LIFE" ,"FIRMWARE/#","CHANNEL/+/#"     ,"CMD/#" ,"VAL/#" ,"ACS71020/#"  ,"HELP" ,"PUMP/+/REQUEST","PARAM/#" ,"LIST","DEBUG","PUMP/+/PARAM/#"};
 T_MQTT_Sub_Callback *MQTT_Sub_Callbacks[]=  {LIFE_CB,FIRMWARE_CB,CHANNEL_CB,CMD_CB,VAL_CB,ACS71020_CB,help_CB,PUMP_CB,param_CB,LIST_CB,DEBUG_CB,PUMP_PARAM_CB}; 
 
 
@@ -2148,7 +2188,7 @@ static void event_handler(void* arg, esp_event_base_t event_base,
     }
 }
 
- wifi_config_t wifi_config;
+
 void initialise_wifi(void)
 {
 	Write_Msg_toDisplay(0,"connect to WIFI...");
