@@ -1733,73 +1733,62 @@ bool LIST_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 }
 
 
+char * HELP_msg[]={"",
+"FIRMWARE/URL {URL} -set new URL for OTA\n\
+FIRMWARE/SELECT_URL {?:G:S:N} - ?: query, S:szabolcskiss; G:github; N:new given by FIRMWARE/URL \n\
+FIRMWARE/VERSION  {version:?} -set new version for OTA:query\n\
+FIRMWARE/ROLLBACK {ROLLBACK:CANCEL_ROLLBACK} -keep or rollback OTA update",
+"CHANNEL/x/REQUEST {STARTED,RESUMED,INIT,ENABLED,DISABLED,SUSPENDED,DELAY,FINISHED,END,IDLE,REBOOTED,NOREQUEST} -set new state\n\
+CHANNEL/x/SCHEDULE/PERIODx {10:00-12:00 [+++++++] 30 1000} -add new schedule period 30min 1000l\n\
+CHANNEL/x/SCHEDULE/? {}   -list all programmed periods\n\
+CHANNEL/x/STATISTIC {} -get statistic\n\
+CHANNEL/x/PARAM/NAME {new name} -set channel name\n\
+CHANNEL/x/PARAM/PUMP {1|2|3} -set assigned pump 3:BOTH",
+"CMD/MEAS_MODE {POWER:LEVEL:STACK:CT:LOG:VOLUME:OFF}\n\
+CMD/RESTART {ESP:WIFI} -force restart of ESP32 or WIFI dongle\n\
+CMD/TO_SLAVE {topic=value} -send topic to other esp32 via LoRa\n\
+SAVE_NVS {}",
+"VAL/LEVEL {} -query water level\n\
+VAL/TIME {} -query TIME\n\
+VAL/TEMP {} -query temperature sensor\n\
+VAL/PUMP {} -query pump status",
+"ACS71020/READ {0xhex_address}\n\
+ACS71020/WRITE {0xhex_address=0xhex_value}\n\
+ACS71020/DETECT {} - detect chip addres",
+"HELP {FIRMWARE|CHANNEL|VAL|PUMP|PARAM|CMD|ACS71020|LIST|DEBUG|WIFI} show the available sub help",
+"PUMP/+/REQUEST +:PRIO|1|2 {ON|OFF|DISABLE|ENABLE|SET_PRIO|SET_SWITCHBACK|DEL_SWITCHBACK} -switch PUMP ON|OFF\n\
+PUMP/x/PARAM/SET_AUTO_SWITCH_ON,DEL_AUTO_SWITCH_ON|SET_REMOTE_PUMP|SET_REMOTE_PUMP|SET_DEFAULT {}\n\
+PUMP/x/PARAM/FLOW_RATE_MIN|T_TRIP,T_RESET {value} -set auto ON\n\
+PUMP/x/PARAM/RESTART_DELAY {10min} -set pump restart delay",
+"PARAM/{WIFI/SSID|WIFI/PWD|MAIN_TOPIC|RUN_MODE|PUMP_NUM|CHANNEL_NUM|ACS71020_ADDR|SLAVE_RELAY|FIRSTRUN|DUAL_MODE} {value}\n\
+info: RUN_MODES:{USE_BLE,USE_WIFI,USE_ACS71020,MAIN_TASK,HANDLE_SCHEDULED,MOTOR_CURRENT_PROT,TEMPSENSOR,CURRENTSENSOR,MEASURE_LEVEL,MEASURE_POWER,POWERMETER_TASK,USE_LORA,CLONE_TASK}\n\
+(default RUN_MODEs: 8191, 2607)",
+"LIST {CHANNELS|LOG|IRR|LORA}",
+"DEBUG {REDIRECT ON|REDIRECT OFF|SET LOG LEVEL:x|ERASE LOG|ERASE LOG|GET NEXT|VALVE CHECK) - debug features"
+};
 
 
 bool help_CB(char* ltopic, char* ldata, bool MQTT,char *wilcarded_topic)
 {//"LIFE" ,"FIRMWARE/#","CHANNEL/+/#"     ,"CMD/#" ,"VAL/#" ,"ACS71020/#"  ,"HELP" ,"PUMP/+/REQUEST","PARAM" ,"LIST","DEBUG","PUMP/+/PARAM/#"
  char *message="HELP {FIRMWARE|CHANNEL|VAL|PUMP|PARAM|CMD|ACS71020|LIST|DEBUG|WIFI} show the available sub help";
- if (strcmp(ldata,"FIRMWARE")==0)
- {
-  *message="FIRMWARE/URL {URL} -set new URL for OTA\n\
-FIRMWARE/SELECT_URL {?:G:S:N} - ?: query, S:szabolcskiss; G:github; N:new given by FIRMWARE/URL \n\
-FIRMWARE/VERSION  {version:?} -set new version for OTA:query\n\
-FIRMWARE/ROLLBACK {ROLLBACK:CANCEL_ROLLBACK} -keep or rollback OTA update";
- }
- else if (strcmp(ldata,"CHANNEL")==0)
-{
- *message="CHANNEL/x/REQUEST {STARTED,RESUMED,INIT,ENABLED,DISABLED,SUSPENDED,DELAY,FINISHED,END,IDLE,REBOOTED,NOREQUEST} -set new state\n\
-CHANNEL/x/SCHEDULE/PERIODx {10:00-12:00 [+++++++] 30 1000} -add new schedule period 30min 1000l\n\
-CHANNEL/x/SCHEDULE/? {}   -list all programmed periods\n\
-CHANNEL/x/STATISTIC {} -get statistic\n\
-CHANNEL/x/PARAM/NAME {new name} -set channel name\n\
-CHANNEL/x/PARAM/PUMP {1|2|3} -set assigned pump 3:BOTH";
-}
-else if (strcmp(ldata,"VAL")==0)
-{
-*message="VAL/LEVEL {} -query water level\n\
-VAL/TIME {} -query TIME\n\
-VAL/TEMP {} -query temperature sensor\n\
-VAL/PUMP {} -query pump status";
-}
-else if (strcmp(ldata,"PUMP")==0)
-{
-*message="PUMP/+/REQUEST +:PRIO|1|2 {ON|OFF|DISABLE|ENABLE|SET_PRIO|SET_SWITCHBACK|DEL_SWITCHBACK} -switch PUMP ON|OFF\n\
-PUMP/x/PARAM/SET_AUTO_SWITCH_ON,DEL_AUTO_SWITCH_ON|SET_REMOTE_PUMP|SET_REMOTE_PUMP|SET_DEFAULT {}\n\
-PUMP/x/PARAM/FLOW_RATE_MIN|T_TRIP,T_RESET {value} -set auto ON\n\
-PUMP/x/PARAM/RESTART_DELAY {10min} -set pump restart delay";
-}
-else if (strcmp(ldata,"PARAM")==0)
-{
-*message="PARAM/{WIFI/SSID|WIFI/PWD|MAIN_TOPIC|RUN_MODE|PUMP_NUM|CHANNEL_NUM|ACS71020_ADDR|SLAVE_RELAY|FIRSTRUN|DUAL_MODE} {value}\n\
-info: RUN_MODES:{USE_BLE,USE_WIFI,USE_ACS71020,MAIN_TASK,HANDLE_SCHEDULED,MOTOR_CURRENT_PROT,TEMPSENSOR,CURRENTSENSOR,MEASURE_LEVEL,MEASURE_POWER,POWERMETER_TASK,USE_LORA,CLONE_TASK}\n\
-(default RUN_MODEs: 8191, 2607)";
-}
-else if (strcmp(ldata,"CMD")==0)
-{
-*message="CMD/MEAS_MODE {POWER:LEVEL:STACK:CT:LOG:VOLUME:OFF}\n\
-CMD/RESTART {ESP:WIFI} -force restart of ESP32 or WIFI dongle\n\
-CMD/TO_SLAVE {topic=value} -send topic to other esp32 via LoRa\n\
-SAVE_NVS {}";
-}
-else if (strcmp(ldata,"ACS71020")==0)
-{
-*message="ACS71020/READ {0xhex_address}\n\
-ACS71020/WRITE {0xhex_address=0xhex_value}\n\
-ACS71020/DETECT {} - detect chip addres";
-}
-else if (strcmp(ldata,"DEBUG")==0)
-{
-*message="DEBUG {REDIRECT ON|REDIRECT OFF|SET LOG LEVEL:x|ERASE LOG|ERASE LOG|GET NEXT|VALVE CHECK) - debug features";
-}
-else if (strcmp(ldata,"LIST")==0)
-{
-*message="LIST {CHANNELS|LOG|IRR|LORA}";	
-}
-else if (strcmp(ldata,"WIFI")==0)
-{
-*message="SSID {new SSID} - store new SSID \n\
-PWD  {new PASSWORD} -sore new PAssword";	
-}
+ if (strcmp(ldata,"LIFE")==0) 			message=HELP_msg[0];
+ else if (strcmp(ldata,"FIRMWARE")==0) 	message=HELP_msg[1];
+ else if (strcmp(ldata,"CHANNEL")==0) 	message=HELP_msg[2];
+ else if (strcmp(ldata,"CMD")==0) 		message=HELP_msg[3];
+ else if (strcmp(ldata,"VAL")==0) 		message=HELP_msg[4];
+ else if (strcmp(ldata,"ACS71020")==0) 	message=HELP_msg[5];
+ else if (strcmp(ldata,"HELP")==0) 		message=HELP_msg[6];
+ else if (strcmp(ldata,"PUMP")==0) 		message=HELP_msg[7];
+ else if (strcmp(ldata,"PARAM")==0)		message=HELP_msg[8];
+ else if (strcmp(ldata,"LIST")==0) 		message=HELP_msg[9];
+ else if (strcmp(ldata,"DEBUG")==0) 	message=HELP_msg[10];
+
+
+ else if (strcmp(ldata,"WIFI")==0)
+  {
+   *message="SSID {new SSID} - store new SSID \n\
+  PWD  {new PASSWORD} -sore new PAssword";	
+  }
 
 
 		
