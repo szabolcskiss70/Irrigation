@@ -75,6 +75,6 @@ bool isPUMP_disabled(int id);
 bool isPUMP_available(int id);
 void switch_pump_id_to_state(int id, T_pump_states new_state);
 float measure_flowrate_on_local_pump(int pump_ID);
-
+int get_GPIO_PROT(int id);
 
 #endif

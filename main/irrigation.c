@@ -1108,6 +1108,16 @@ bool LEVEL___CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32]
 				get_LEVEL_string(MQTT_BLE_answer);
 				return true;
 			}
+
+bool KUT___CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
+			{
+				if (isLowLevelSwitchActive(0)==1) strcpy(MQTT_BLE_answer,"WATER LEVEL IS TOO LOW"); 
+				else strcpy(MQTT_BLE_answer,"WATER LEVEL IS OK"); 
+				return true;
+			}
+
+
+
 bool TIME___CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 {
 				char strftime_buf[64];
@@ -1548,13 +1558,13 @@ bool param_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 				   {	 
 				    sprintf(MQTT_BLE_answer,"%s {%s}", "maintopic",maintopic); 
 				   }
-                  else if (strcmp(wilcarded_topic[0],"SSID")==0)
+                  else if (strcmp(wilcarded_topic[0],"WIFI/SSID")==0)
 				   {
 					memcpy(wifi_config.sta.ssid, ldata, sizeof(wifi_config.sta.ssid));
 					printf("SSID:%s stored.\n",wifi_config.sta.ssid);
 					sprintf(MQTT_BLE_answer,"SSID:%s stored.\n",wifi_config.sta.ssid);
 				   }
-				  else if (strcmp(wilcarded_topic[0],"PWD")==0)
+				  else if (strcmp(wilcarded_topic[0],"WIFI/PWD")==0)
 				   {
 					printf("Password:%s\n",ldata);
 						memcpy(wifi_config.sta.password, ldata, sizeof(wifi_config.sta.password));
@@ -1680,6 +1690,7 @@ bool VAL_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
  else if (strcmp(wilcarded_topic[0],"TIME")==0) return(TIME___CB(ltopic,  ldata,  MQTT, wilcarded_topic));
  else if (strcmp(wilcarded_topic[0],"TEMP")==0) return(temp___CB(ltopic,  ldata,  MQTT, wilcarded_topic));
  else if (strcmp(wilcarded_topic[0],"RUN_MODE")==0) return(run_mode___CB(ltopic,  ldata,  MQTT, wilcarded_topic));
+ else if (strcmp(wilcarded_topic[0],"KUT")==0) return(KUT___CB(ltopic,  ldata,  MQTT, wilcarded_topic));
 
 
  else return true;
@@ -1733,44 +1744,55 @@ bool LIST_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 }
 
 
-char * HELP_msg[]={"",
+char * HELP_msg[]={"LIFE bit topic",
+
 "FIRMWARE/URL {URL} -set new URL for OTA\n\
 FIRMWARE/SELECT_URL {?:G:S:N} - ?: query, S:szabolcskiss; G:github; N:new given by FIRMWARE/URL \n\
 FIRMWARE/VERSION  {version:?} -set new version for OTA:query\n\
 FIRMWARE/ROLLBACK {ROLLBACK:CANCEL_ROLLBACK} -keep or rollback OTA update",
+
 "CHANNEL/x/REQUEST {STARTED,RESUMED,INIT,ENABLED,DISABLED,SUSPENDED,DELAY,FINISHED,END,IDLE,REBOOTED,NOREQUEST} -set new state\n\
 CHANNEL/x/SCHEDULE/PERIODx {10:00-12:00 [+++++++] 30 1000} -add new schedule period 30min 1000l\n\
 CHANNEL/x/SCHEDULE/? {}   -list all programmed periods\n\
 CHANNEL/x/STATISTIC {} -get statistic\n\
 CHANNEL/x/PARAM/NAME {new name} -set channel name\n\
 CHANNEL/x/PARAM/PUMP {1|2|3} -set assigned pump 3:BOTH",
+
 "CMD/MEAS_MODE {POWER:LEVEL:STACK:CT:LOG:VOLUME:OFF}\n\
 CMD/RESTART {ESP:WIFI} -force restart of ESP32 or WIFI dongle\n\
 CMD/TO_SLAVE {topic=value} -send topic to other esp32 via LoRa\n\
 SAVE_NVS {}",
+
 "VAL/LEVEL {} -query water level\n\
 VAL/TIME {} -query TIME\n\
 VAL/TEMP {} -query temperature sensor\n\
-VAL/PUMP {} -query pump status",
+VAL/PUMP {} -query pump status\n\
+VAL\KUT {}  -query low level switch",
+
 "ACS71020/READ {0xhex_address}\n\
 ACS71020/WRITE {0xhex_address=0xhex_value}\n\
 ACS71020/DETECT {} - detect chip addres",
+
 "HELP {FIRMWARE|CHANNEL|VAL|PUMP|PARAM|CMD|ACS71020|LIST|DEBUG|WIFI} show the available sub help",
+
 "PUMP/+/REQUEST +:PRIO|1|2 {ON|OFF|DISABLE|ENABLE|SET_PRIO|SET_SWITCHBACK|DEL_SWITCHBACK} -switch PUMP ON|OFF\n\
 PUMP/x/PARAM/SET_AUTO_SWITCH_ON,DEL_AUTO_SWITCH_ON|SET_REMOTE_PUMP|SET_REMOTE_PUMP|SET_DEFAULT {}\n\
 PUMP/x/PARAM/FLOW_RATE_MIN|T_TRIP,T_RESET {value} -set auto ON\n\
 PUMP/x/PARAM/RESTART_DELAY {10min} -set pump restart delay",
+
 "PARAM/{WIFI/SSID|WIFI/PWD|MAIN_TOPIC|RUN_MODE|PUMP_NUM|CHANNEL_NUM|ACS71020_ADDR|SLAVE_RELAY|FIRSTRUN|DUAL_MODE} {value}\n\
 info: RUN_MODES:{USE_BLE,USE_WIFI,USE_ACS71020,MAIN_TASK,HANDLE_SCHEDULED,MOTOR_CURRENT_PROT,TEMPSENSOR,CURRENTSENSOR,MEASURE_LEVEL,MEASURE_POWER,POWERMETER_TASK,USE_LORA,CLONE_TASK}\n\
 (default RUN_MODEs: 8191, 2607)",
+
 "LIST {CHANNELS|LOG|IRR|LORA}",
+
 "DEBUG {REDIRECT ON|REDIRECT OFF|SET LOG LEVEL:x|ERASE LOG|ERASE LOG|GET NEXT|VALVE CHECK) - debug features"
 };
 
 
 bool help_CB(char* ltopic, char* ldata, bool MQTT,char *wilcarded_topic)
 {//"LIFE" ,"FIRMWARE/#","CHANNEL/+/#"     ,"CMD/#" ,"VAL/#" ,"ACS71020/#"  ,"HELP" ,"PUMP/+/REQUEST","PARAM" ,"LIST","DEBUG","PUMP/+/PARAM/#"
- char *message="HELP {FIRMWARE|CHANNEL|VAL|PUMP|PARAM|CMD|ACS71020|LIST|DEBUG|WIFI} show the available sub help";
+ char *message="";
  if (strcmp(ldata,"LIFE")==0) 			message=HELP_msg[0];
  else if (strcmp(ldata,"FIRMWARE")==0) 	message=HELP_msg[1];
  else if (strcmp(ldata,"CHANNEL")==0) 	message=HELP_msg[2];
@@ -1782,13 +1804,7 @@ bool help_CB(char* ltopic, char* ldata, bool MQTT,char *wilcarded_topic)
  else if (strcmp(ldata,"PARAM")==0)		message=HELP_msg[8];
  else if (strcmp(ldata,"LIST")==0) 		message=HELP_msg[9];
  else if (strcmp(ldata,"DEBUG")==0) 	message=HELP_msg[10];
-
-
- else if (strcmp(ldata,"WIFI")==0)
-  {
-   *message="SSID {new SSID} - store new SSID \n\
-  PWD  {new PASSWORD} -sore new PAssword";	
-  }
+ else message="HELP {FIRMWARE|CHANNEL|VAL|PUMP|PARAM|CMD|ACS71020|LIST|DEBUG|WIFI} show the available sub help";
 
 
 		
@@ -1885,7 +1901,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 					char message[64];  
 					char timeStr[32];           
 					time(&now_life_sent);
-					sprintf(timeStr,"%2.2d:%2.2d:%2.2d",(int)((now_life_sent)/3600),(int)(((now_life_sent)%3600)/60),(int)((now_life_sent)%60)); 
+					sprintf(timeStr,"%2.2d:%2.2d:%2.2d",(int)((now_life_sent%86400)/3600),(int)(((now_life_sent)%3600)/60),(int)((now_life_sent)%60)); 
 			
 					sprintf(message,"%lld:%s",now_life_sent,timeStr);   
 					my_esp_mqtt_client_publish(mqtt_client, "LIFE", message, 0, 0, 1);   //Qos=0; retain=1

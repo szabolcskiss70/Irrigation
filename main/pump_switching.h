@@ -35,6 +35,8 @@ float measure_flowrate();
 time_t now_pump();
 int get_flow_count_increase();
 int get_flow_count_increase_local_pump(int pump_ID);
+int isLowLevelSwitchActive(int id);
+
 
 typedef struct 
 {
