@@ -975,6 +975,7 @@ bool DEBUG_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 {
 	
 	char log_tag[32];
+	int items;
 	if ((strcmp(wilcarded_topic[0],"LOG/REDIRECT")==0) && (strcmp(ldata,"ON")==0))
 	{
 	  esp_log_level_set("*", ESP_LOG_ERROR);
@@ -997,8 +998,9 @@ bool DEBUG_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 	 append_log(LOG_FILE,"New log%d",1);
 	 strcpy(MQTT_BLE_answer,"LOG erased");
 	}
-	else if ((strcmp(wilcarded_topic[0],"LOG/LEVEL")==0) && (sscanf(ldata,"%s,%d",log_tag,&log_level)==2) &&  (log_level<=5) &&  (log_level>=0)) 
+	else if ((strcmp(wilcarded_topic[0],"LOG/LEVEL")==0) && ((items=sscanf(ldata,"%d,%s",&log_level,log_tag)>=1)) &&  (log_level<=5) &&  (log_level>=0)) 
 	{
+		if (items==1) strcpy(log_tag,"*");
 		esp_log_level_set(log_tag, log_level);
 		sprintf(MQTT_BLE_answer,"log level for tag(%s)=%d",log_tag,log_level);
 	}
@@ -1796,7 +1798,7 @@ info: RUN_MODES:{USE_BLE,USE_WIFI,USE_ACS71020,MAIN_TASK,HANDLE_SCHEDULED,MOTOR_
 "LIST {CHANNELS|LOG|IRR|LORA}",
 
 "DEBUG/LOG/REDIRECT {ON|OFF} -switch redirecting log ON/OFF to file\n\
- DEBUG/LOG/LEVEL {x:} - set log level to x (1..5)\n\
+ DEBUG/LOG/LEVEL {x{,tag}} - set log level to x to TAG (1..5,*|(1..5))\n\
  DEBUG/LOG/ERASE - erase log file \n\ 
  DEBUG {ERASE NVS|GET NEXT|VALVE CHECK} - erase NVS memory, get next irrigation time,valve check"
 };
