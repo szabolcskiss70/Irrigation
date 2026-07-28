@@ -1833,7 +1833,7 @@ return true;
 }
 
 
-char* subscribe_topics[]=                   {"LIFE" ,"FIRMWARE/#","CHANNEL/+/#"     ,"CMD/#" ,"VAL/#" ,"ACS71020/#"  ,"HELP" ,"PUMP/+/REQUEST","PARAM/#" ,"LIST","DEBUG","PUMP/+/PARAM/#"};
+char* subscribe_topics[]=                   {"LIFE" ,"FIRMWARE/#","CHANNEL/+/#"     ,"CMD/#" ,"VAL/#" ,"ACS71020/#"  ,"HELP" ,"PUMP/+/REQUEST","PARAM/#" ,"LIST","DEBUG/#","PUMP/+/PARAM/#"};
 T_MQTT_Sub_Callback *MQTT_Sub_Callbacks[]=  {LIFE_CB,FIRMWARE_CB,CHANNEL_CB,CMD_CB,VAL_CB,ACS71020_CB,help_CB,PUMP_CB,param_CB,LIST_CB,DEBUG_CB,PUMP_PARAM_CB}; 
 
 
