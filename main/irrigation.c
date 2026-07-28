@@ -1079,11 +1079,14 @@ bool FIRMWARE_VERSION_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_top
 			}
 bool FIRMWARE_ROLLBACK_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 			{
-				 
+				 if(strcmp(ldata,"DO")==0)
+				 {
 					strcpy(MQTT_BLE_answer,"FIRMWARE/ROLLBACK STARTED"); 
-					my_esp_mqtt_client_publish(mqtt_client, "FIRMWARE/ROLLBACK", "STARTED", 0, 0, 0);   //Qos=1; retain=1
+					my_esp_mqtt_client_publish(mqtt_client, "FIRMWARE/ROLLBACK", "STARTED", 0, 0, 0);  //update ROLLBACK topic to do it only once
 					esp_ota_mark_app_invalid_rollback_and_reboot(); //rollback to previous FW 
+				 }
 				    return true;
+
 }
 
 bool FIRMWARE_KEEP_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
@@ -1753,7 +1756,7 @@ char * HELP_msg[]={"LIFE bit topic",
 "FIRMWARE/URL {URL} -set new URL for OTA\n\
 FIRMWARE/SELECT_URL {?:G:S:N} - ?: query, S:szabolcskiss; G:github; N:new given by FIRMWARE/URL \n\
 FIRMWARE/VERSION  {version:?} -set new version for OTA:query\n\
-FIRMWARE/ROLLBACK {} -rollback OTA update\n\
+FIRMWARE/ROLLBACK {DO} -rollback OTA update\n\
 FIRMWARE/KEEP {} -validate and keep OTA update",
 
 "CHANNEL/x/REQUEST {ENABLED|DISABLED|ON|ON xmin|OFF} -set new state\n\
@@ -1898,8 +1901,8 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 			  msg_id = my_esp_mqtt_client_publish(mqtt_client, "FIRMWARE/RUNNING_VERSION",MQTT_BLE_answer, 0, 0, 1);   //Qos=1; retain=1
 			  ESP_LOGI(TAG, "publish successful, msg_id=%d", msg_id);
 			  
-			   msg_id = my_esp_mqtt_client_publish(mqtt_client, "FIRMWARE/ROLLBACK", "", 0, 0, 0);   //Qos=1; retain=0
-			   ESP_LOGI(TAG, "publish successful, msg_id=%d", msg_id);
+			   //msg_id = my_esp_mqtt_client_publish(mqtt_client, "FIRMWARE/ROLLBACK", "", 0, 0, 0);   //Qos=1; retain=0
+			   //ESP_LOGI(TAG, "publish successful, msg_id=%d", msg_id);
 			 }
 		 	if(mqtt_connected) 
 			{	
@@ -3875,7 +3878,7 @@ void app_main()
 
     if (log_level<=1) remove(LOG_FILE);
 	else esp_log_level_set("*", log_level);
-	
+
 	append_log(LOG_FILE,"Rebooted\n");
 	_log_remote_fp=fopen(LOG_FILE,"w+");
 	if (_log_remote_fp!=NULL) esp_log_set_vprintf(&_log_vprintf);	
