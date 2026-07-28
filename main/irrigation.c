@@ -1545,11 +1545,11 @@ bool measure_mode_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5
 			{    
 				 measure_mode=OFF;
 				 if(strstr(ldata,"LEVEL")!=NULL)  measure_mode |=(1<<LEVEL); 
-				 if(strcmp(ldata,"POWER")!=NULL)  measure_mode|=(1<<POWER);
-				 if(strcmp(ldata,"CURRENT")!=NULL) measure_mode|=(1<<CT);
-				 if(strcmp(ldata,"STACK")!=NULL)  measure_mode|=(1<<STACK);
-				 if(strcmp(ldata,"LOG")!=NULL)    measure_mode|=(1<<LOG);
-				 if(strcmp(ldata,"VOLUME")!=NULL) measure_mode|=(1<<VOLUME);
+				 if(strstr(ldata,"POWER")!=NULL)  measure_mode|=(1<<POWER);
+				 if(strstr(ldata,"CURRENT")!=NULL) measure_mode|=(1<<CT);
+				 if(strstr(ldata,"STACK")!=NULL)  measure_mode|=(1<<STACK);
+				 if(strstr(ldata,"LOG")!=NULL)    measure_mode|=(1<<LOG);
+				 if(strstr(ldata,"VOLUME")!=NULL) measure_mode|=(1<<VOLUME);
 
 				 sprintf(MQTT_BLE_answer,"%s {%d}", "measure_mode",(int) measure_mode); 
 				 return true;
