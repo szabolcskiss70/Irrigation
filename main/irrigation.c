@@ -783,7 +783,7 @@ void append_ontimes2string(int ch)
     sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:last period sink volume: %1.1fl\n",channels[ch].Name,channels[ch].last_sink_volume);
     sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"%s:suspend count: %d\n",channels[ch].Name,channels[ch].suspend_cnt);
 
-    if (measure_mode==DEBUG)
+    if (measure_mode & (1<<DEBUG))
 	{
 		sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"status:%s\n",str_states[channels[ch].channel_state]);
 		sprintf(MQTT_BLE_answer+strlen(MQTT_BLE_answer),"is_channel_active:%d\n",(int)is_channel_active(ch));
@@ -902,7 +902,7 @@ bool LIFE_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 {
 	sscanf(ldata,"%lld",&now_life_received);
 				
-				//if(measure_mode==LOG)
+				//if(measure_mode & (1<<LOG))
 				{
 				 char message[16];
 				 sprintf(message,"%lld",now_life_received);
@@ -970,11 +970,12 @@ int detect_ACS71020_Address()
  return 0;
 }
 
-
+int log_level=0;
 bool DEBUG_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 {
-	int log_level=0;
-	if (strcmp(ldata,"REDIRECT ON")==0)
+	
+	char log_tag[32];
+	if ((strcmp(wilcarded_topic[0],"LOG/REDIRECT")==0) && (strcmp(ldata,"ON")==0))
 	{
 	  esp_log_level_set("*", ESP_LOG_ERROR);
 	  remove(LOG_FILE);
@@ -983,29 +984,30 @@ bool DEBUG_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
       esp_log_set_vprintf(&_log_vprintf);	
 	  strcpy(MQTT_BLE_answer,"Redirecting ON, loglevel=1");
 	}
-	else if (strcmp(ldata,"REDIRECT OFF")==0)
+	else if((strcmp(wilcarded_topic[0],"LOG/REDIRECT")==0) &&  (strcmp(ldata,"OFF")==0))
 	{
 	 esp_log_level_set("*", ESP_LOG_ERROR);	
 	 esp_log_set_vprintf(&vprintf);	
 	 if (_log_remote_fp!=NULL)  fclose(_log_remote_fp);
 	 strcpy(MQTT_BLE_answer,"Redirecting OFF, loglevel=1");
 	}
-	else if (strcmp(ldata,"ERASE LOG")==0)
+	else if((strcmp(wilcarded_topic[0],"LOG")==0) &&  (strcmp(ldata,"ERASE")==0))
 	{
 	 remove(LOG_FILE);
 	 append_log(LOG_FILE,"New log%d",1);
 	 strcpy(MQTT_BLE_answer,"LOG erased");
+	}
+	else if ((strcmp(wilcarded_topic[0],"LOG/LEVEL")==0) && (sscanf(ldata,"%s,%d",log_tag,&log_level)==2) &&  (log_level<=5) &&  (log_level>=0)) 
+	{
+		esp_log_level_set(log_tag, log_level);
+		sprintf(MQTT_BLE_answer,"log level for tag(%s)=%d",log_tag,log_level);
 	}
 	else if (strcmp(ldata,"ERASE NVS")==0)
 	{
 	 Erase_NVS();
 	 strcpy(MQTT_BLE_answer,"NVS erased");
 	}
-	else if ((sscanf(ldata,"SET LOG LEVEL=%d",&log_level)==1) &&  (log_level<=5) &&  (log_level>=0)) 
-	{
-		esp_log_level_set("*", log_level);
-		sprintf(MQTT_BLE_answer,"log level=%d",log_level);
-	}
+	
     else if (strcmp(ldata,"GET NEXT")==0)
 	{
      sprintf(MQTT_BLE_answer,"time to next schedule:%llds",time2nextperiodstart);
@@ -1077,20 +1079,20 @@ bool FIRMWARE_VERSION_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_top
 			}
 bool FIRMWARE_ROLLBACK_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
 			{
-				 if(strcmp(ldata,"CANCEL_ROLLBACK")==0)  
-				 {
-					 esp_ota_mark_app_valid_cancel_rollback(); //validate the last OTA update
-					 strcpy(MQTT_BLE_answer,"FIRMWARE/ROLLBACK CANCELLED"); 
-				 }
-				 else if(strcmp(ldata,"ROLLBACK")==0) 
-				 {
+				 
 					strcpy(MQTT_BLE_answer,"FIRMWARE/ROLLBACK STARTED"); 
 					my_esp_mqtt_client_publish(mqtt_client, "FIRMWARE/ROLLBACK", "STARTED", 0, 0, 0);   //Qos=1; retain=1
-					esp_ota_mark_app_invalid_rollback_and_reboot(); //rollback to previous FW
-					 
-				 }
-				 return true;
+					esp_ota_mark_app_invalid_rollback_and_reboot(); //rollback to previous FW 
+				    return true;
 }
+
+bool FIRMWARE_KEEP_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
+			{
+
+					 esp_ota_mark_app_valid_cancel_rollback(); //validate the last OTA update
+					 strcpy(MQTT_BLE_answer,"FIRMWARE/Validated"); 
+			         return true;
+			}
 
 
 bool FIRMWARE_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])
@@ -1099,6 +1101,7 @@ bool FIRMWARE_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32
  else  if (strcmp(wilcarded_topic[0],"SELECT_URL")==0) return(FIRMWARE_SELECT_URL_CB(ltopic, ldata, MQTT, wilcarded_topic));
  else  if (strcmp(wilcarded_topic[0],"VERSION")==0) return(FIRMWARE_VERSION_CB(ltopic, ldata, MQTT, wilcarded_topic));
  else  if (strcmp(wilcarded_topic[0],"ROLLBACK")==0) return(FIRMWARE_ROLLBACK_CB(ltopic, ldata, MQTT, wilcarded_topic));
+ else  if (strcmp(wilcarded_topic[0],"KEEP")==0) return(FIRMWARE_KEEP_CB(ltopic, ldata, MQTT, wilcarded_topic));
  else return true;
 }
 
@@ -1534,14 +1537,15 @@ bool restart_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32]
 			}
 		
 bool measure_mode_CB(char* ltopic, char* ldata, bool MQTT,char wilcarded_topic[5][32])			
-			{
-				 if(strcmp(ldata,"LEVEL")==0)  measure_mode=LEVEL;
-				 else if(strcmp(ldata,"POWER")==0)  measure_mode=POWER;
-				 else if(strcmp(ldata,"CT")==0)  measure_mode=CT;
-				 else if(strcmp(ldata,"STACK")==0)  measure_mode=STACK;
-				 else if(strcmp(ldata,"LOG")==0)  measure_mode=LOG;
-				 else if(strcmp(ldata,"VOLUME")==0)  measure_mode=VOLUME;
-				 else measure_mode=OFF;
+			{    
+				 measure_mode=OFF;
+				 if(strstr(ldata,"LEVEL")!=NULL)  measure_mode |=(1<<LEVEL); 
+				 if(strcmp(ldata,"POWER")!=NULL)  measure_mode|=(1<<POWER);
+				 if(strcmp(ldata,"CURRENT")!=NULL) measure_mode|=(1<<CT);
+				 if(strcmp(ldata,"STACK")!=NULL)  measure_mode|=(1<<STACK);
+				 if(strcmp(ldata,"LOG")!=NULL)    measure_mode|=(1<<LOG);
+				 if(strcmp(ldata,"VOLUME")!=NULL) measure_mode|=(1<<VOLUME);
+
 				 sprintf(MQTT_BLE_answer,"%s {%d}", "measure_mode",(int) measure_mode); 
 				 return true;
 			}
@@ -1627,10 +1631,10 @@ bool CHANNEL_request_CB(int ch,char* ltopic, char* ldata, bool MQTT,char wilcard
 				 else if(strcmp(ldata,"OFF")==0) channels[ch].manual_change_request=END;
 			     else channels[ch].manual_change_request=NOREQUEST;
 
-				 if(channels[ch].manual_change_request==ENABLED) {channels[ch].channel_disabled=0;Save_data_to_NVS();}
-				 else if (channels[ch].manual_change_request==DISABLED) {channels[ch].channel_disabled=1;Save_data_to_NVS();}
-				 else if(strcmp(ldata,"VALVE ON")==0) writeDO(channels[ch].Valve_GPIO_OUTPUT, true);
-				 else if(strcmp(ldata,"VALVE OFF")==0) writeDO(channels[ch].Valve_GPIO_OUTPUT, false);
+				 if((channels[ch].manual_change_request==ENABLED) || (strcmp(ldata,"ENABLE")==0)) {channels[ch].channel_disabled=0;Save_data_to_NVS();}
+				 else if ((channels[ch].manual_change_request==DISABLED) || (strcmp(ldata,"DISABLE")==0)) {channels[ch].channel_disabled=1;Save_data_to_NVS();}
+				 else if ((strcmp(wilcarded_topic[0],"VALVE")==0) && (strcmp(ldata,"ON")==0)) writeDO(channels[ch].Valve_GPIO_OUTPUT, true);
+				 else if ((strcmp(wilcarded_topic[0],"VALVE")==0) && (strcmp(ldata,"OFF")==0)) writeDO(channels[ch].Valve_GPIO_OUTPUT, false);
 				 
 				}
 				sprintf(MQTT_BLE_answer,"%s {%s}", ltopic,str_states[channels[ch].channel_state]);  					 
@@ -1749,9 +1753,11 @@ char * HELP_msg[]={"LIFE bit topic",
 "FIRMWARE/URL {URL} -set new URL for OTA\n\
 FIRMWARE/SELECT_URL {?:G:S:N} - ?: query, S:szabolcskiss; G:github; N:new given by FIRMWARE/URL \n\
 FIRMWARE/VERSION  {version:?} -set new version for OTA:query\n\
-FIRMWARE/ROLLBACK {ROLLBACK:CANCEL_ROLLBACK} -keep or rollback OTA update",
+FIRMWARE/ROLLBACK {} -rollback OTA update\n\
+FIRMWARE/KEEP {} -validate and keep OTA update",
 
-"CHANNEL/x/REQUEST {STARTED,RESUMED,INIT,ENABLED,DISABLED,SUSPENDED,DELAY,FINISHED,END,IDLE,REBOOTED,NOREQUEST} -set new state\n\
+"CHANNEL/x/REQUEST {ENABLED|DISABLED|ON|ON xmin|OFF} -set new state\n\
+CHANNEL/x/REQUEST/VALVE {ON|OFF} -switch valve directly\n\
 CHANNEL/x/SCHEDULE/PERIODx {10:00-12:00 [+++++++] 30 1000} -add new schedule period 30min 1000l\n\
 CHANNEL/x/SCHEDULE/? {}   -list all programmed periods\n\
 CHANNEL/x/STATISTIC {} -get statistic\n\
@@ -1786,7 +1792,10 @@ info: RUN_MODES:{USE_BLE,USE_WIFI,USE_ACS71020,MAIN_TASK,HANDLE_SCHEDULED,MOTOR_
 
 "LIST {CHANNELS|LOG|IRR|LORA}",
 
-"DEBUG {REDIRECT ON|REDIRECT OFF|SET LOG LEVEL:x|ERASE LOG|ERASE LOG|GET NEXT|VALVE CHECK) - debug features"
+"DEBUG/LOG/REDIRECT {ON|OFF} -switch redirecting log ON/OFF to file\n\
+ DEBUG/LOG/LEVEL {x:} - set log level to x (1..5)\n\
+ DEBUG/LOG/ERASE - erase log file \n\ 
+ DEBUG {ERASE NVS|GET NEXT|VALVE CHECK} - erase NVS memory, get next irrigation time,valve check"
 };
 
 
@@ -1819,10 +1828,6 @@ if(!MQTT)
 				
 return true;
 }
-
-
-//char* subscribe_topics[]=                   {"LIFE" ,"FIRMWARE/URL" ,"FIRMWARE/SELECT_URL" ,"FIRMWARE/VERSION" ,"FIRMWARE/ROLLBACK" ,"CHANNEL/+/REQUEST"      ,"CHANNEL/+/STATISTIC"      ,"CHANNEL/+/SCHEDULE/#"    ,"RESTART" ,"MEASURE_MODE" ,"LEVEL/?" ,"TIME/?"  ,"ACS71020/READ" ,"ACS71020/WRITE" ,"TEMP/?" ,"HELP" ,"PUMP/+/REQUEST" ,"PUMP/?" ,"PARAM" ,"RUN_MODE/?","LIST","CHANNEL/+/PARAM/#","CHANNEL/+/TIMES","DEBUG","PUMP/+/PARAM/#","TO_SLAVE"};
-//T_MQTT_Sub_Callback *MQTT_Sub_Callbacks[]=  {LIFE_CB,FIRMWARE_URL_CB,FIRMWARE_SELECT_URL_CB,FIRMWARE_VERSION_CB,FIRMWARE_ROLLBACK_CB,CHANNEL_request_CB,CHANNEL_statistic_CB,CHANNEL_schedule_CB,restart_CB,measure_mode_CB,LEVEL___CB,TIME___CB,ACS71020_read_CB,ACS71020_write_CB,temp___CB,help_CB,PUMP_CB,PUMP___CB,param_CB,run_mode___CB,LIST_CB,CHANNEL_PARAM_CB,CHANNEL_TIMES_CB,DEBUG_CB,PUMP_PARAM_CB,TO_SLAVE_CB}; 
 
 
 char* subscribe_topics[]=                   {"LIFE" ,"FIRMWARE/#","CHANNEL/+/#"     ,"CMD/#" ,"VAL/#" ,"ACS71020/#"  ,"HELP" ,"PUMP/+/REQUEST","PARAM/#" ,"LIST","DEBUG","PUMP/+/PARAM/#"};
@@ -2109,7 +2114,7 @@ void switch_channel(int ch, T_states new_status)
 					}
 	 } 
 
-	if(measure_mode==LOG)
+	if(measure_mode & (1<<LOG))
 				{
 					if(mqtt_connected)
 					{
@@ -2530,7 +2535,7 @@ void mainTask(void *pvParameters){
  
 
   while (!(FW_update_available) && strlen(OTA_SOURCE_URL) && ((PARAM_VALUES[pRUN_MODE]  & (1<<MAIN_TASK))>0)) {
-	if(measure_mode==STACK)
+	if(measure_mode & (1<<STACK))
 	  { char message[64];
 	    int unused_stack=  uxTaskGetStackHighWaterMark(NULL); 
 		if(mqtt_connected)
@@ -2669,7 +2674,7 @@ void mainTask(void *pvParameters){
 		Write_Msg_toDisplay(5,message);
 	}
 	
-    if(measure_mode==VOLUME)
+    if(measure_mode & (1<<VOLUME))
 		{
 		 if(mqtt_connected)
 		 {	
@@ -2845,7 +2850,7 @@ xSemaphoreGive(I2C_mutex);
  sprintf(message,"%0.1lfV %0.1lfA %0.1lfW",urms,irms,p);
  Write_Msg_toDisplay(3,message);
  
- if(measure_mode==POWER)
+ if(measure_mode & (1<<POWER))
  {
   sprintf(message,"Urms=%0.1lfV  Irms=%0.2lfA  P=%0.1lfW num=%0.0lf consumption:%lfkWh\n",urms,irms,p,num,powerconsumptionWs/3600/1000);
   	 if(mqtt_connected)
@@ -2896,7 +2901,7 @@ if(PARAM_VALUES[pRUN_MODE]  & (1<<MEASURE_LEVEL)) //measure water level
 		
 		
 		
-		if(measure_mode==LEVEL)
+		if(measure_mode & (1<<LEVEL))
 		{
 		 //sprintf(message,"Raw: %d,Voltage: %dmV level:%2.1fcm", adc_reading, voltage, (voltage-142)/44.13*3/2);
 		 sprintf(message,"Level:%2.1fcm Temp:%0.2f°C", (voltage[0][0]-142)/44.13*3/2, temperature);
@@ -2904,7 +2909,7 @@ if(PARAM_VALUES[pRUN_MODE]  & (1<<MEASURE_LEVEL)) //measure water level
 		  msg_id = my_esp_mqtt_client_publish(mqtt_client, "MEASURE/LEVEL", message, 0, 0, 0);   //Qos=0; retain=0
 	   
 		}
-		if(measure_mode==CT)
+		if(measure_mode & (1<<CT))
 		{
 			/*TODO
 		uint32_t current_CT[100]={};
@@ -2999,7 +3004,7 @@ esp_err_t _http_event_handler_OTA(esp_http_client_event_t *evt)
 
 esp_err_t my_esp_https_ota(const esp_http_client_config_t *config)
 {
-	char message[128];
+
 	esp_app_desc_t new_app_info;
 	
     if (!config) {
@@ -3007,7 +3012,7 @@ esp_err_t my_esp_https_ota(const esp_http_client_config_t *config)
 		sprintf(MQTT_BLE_answer,"Error:%s","esp_http_client config not found"); 
 	    if(mqtt_connected)
 		{
-	   	 my_esp_mqtt_client_publish(mqtt_client, "OTA/ERROR", message, 0, 0, 0);   //Qos=1; retain=0
+	   	 my_esp_mqtt_client_publish(mqtt_client, "OTA/ERROR", MQTT_BLE_answer, 0, 0, 0);   //Qos=1; retain=0
        	 vTaskDelay(3*1000 / portTICK_PERIOD_MS);
 		}
 		return ESP_ERR_INVALID_ARG;
@@ -3023,7 +3028,7 @@ esp_err_t my_esp_https_ota(const esp_http_client_config_t *config)
 		sprintf(MQTT_BLE_answer,"Error:%s","esp_https_ota_begin failed"); 
 		if(mqtt_connected)
 		{
-	     my_esp_mqtt_client_publish(mqtt_client, "OTA/ERROR", message, 0, 0, 0);   //Qos=1; retain=0
+	     my_esp_mqtt_client_publish(mqtt_client, "OTA/ERROR", MQTT_BLE_answer, 0, 0, 0);   //Qos=1; retain=0
          vTaskDelay(3*1000 / portTICK_PERIOD_MS);
 		}
         return ESP_FAIL;
@@ -3048,7 +3053,7 @@ esp_err_t my_esp_https_ota(const esp_http_client_config_t *config)
 		sprintf(MQTT_BLE_answer,"wrong FIRMWARE project. Running:%s, received:%s",app_desc->project_name,new_app_info.project_name); 
 		if(mqtt_connected)
 		{
-	     my_esp_mqtt_client_publish(mqtt_client, "OTA/ERROR", message, 0, 0, 0);   //Qos=1; retain=0
+	     my_esp_mqtt_client_publish(mqtt_client, "OTA/ERROR", MQTT_BLE_answer, 0, 0, 0);   //Qos=1; retain=0
          vTaskDelay(3*1000 / portTICK_PERIOD_MS);
 		}
 		return ESP_FAIL;
@@ -3173,6 +3178,7 @@ void Load_general_data_from_NVS()
 	 size_t buf_len;
 	 int ret;
 	 long int intval;
+	 uint8_t uint8val;
 	 size_t length=sizeof(maintopic);
     if((ret=nvs_open("my_NVS", NVS_READWRITE, &nvs_handle))!=ESP_OK) ESP_LOGI(TAG, "NVS open failed. %d",ret);
 	nvs_get_str(nvs_handle, "maintopic", maintopic,&length);
@@ -3185,6 +3191,8 @@ void Load_general_data_from_NVS()
 	 }
 	 ESP_LOGI(TAG, "%s:%d",PARAM_NAMES[i],PARAM_VALUES[i]);
 	} 
+	if (nvs_get_u8(nvs_handle, "LOG_LEVEL", &uint8val)==ESP_OK) log_level=uint8val;
+
     nvs_close(nvs_handle);
 }
 
@@ -3211,7 +3219,7 @@ void Save_general_data_to_NVS()
    // TEST_ESP_OK(nvs_erase_all(nvs_handle));
    nvs_set_str(nvs_handle, "maintopic", maintopic);
    for (int i=pRUN_MODE;i<pLAST;i++) nvs_set_i32(nvs_handle, PARAM_NAMES[i],PARAM_VALUES[i]);
-
+   nvs_set_u8(nvs_handle, "LOG_LEVEL", log_level);
    if(nvs_commit(nvs_handle)!=ESP_OK) ESP_LOGI(TAG, "NVS COMMIT FAILED");; 
 
     nvs_close(nvs_handle);
@@ -3860,14 +3868,19 @@ void app_main()
 	ESP_ERROR_CHECK(err);   
 
   
-	  Mount_my_Filesystem("user_fs");
-	  remove(LOG_FILE);
-	  append_log(LOG_FILE,"Rebooted\n");
-	  _log_remote_fp=fopen(LOG_FILE,"w+");
-	  if (_log_remote_fp!=NULL) esp_log_set_vprintf(&_log_vprintf);	
-	  
+	Mount_my_Filesystem("user_fs");
+	
 	  
     Load_general_data_from_NVS();   
+
+    if (log_level<=1) remove(LOG_FILE);
+	else esp_log_level_set("*", log_level);
+	
+	append_log(LOG_FILE,"Rebooted\n");
+	_log_remote_fp=fopen(LOG_FILE,"w+");
+	if (_log_remote_fp!=NULL) esp_log_set_vprintf(&_log_vprintf);	
+
+
 
     if(PARAM_VALUES[pFIRSTRUN]==1)
 	{
