@@ -525,7 +525,10 @@ int  get_flow_rate_protection_limit_dl_per_min(int id) {
 xSemaphoreGiveRecursive(pump_array_mutex);
   return(retval);}
 
-
+int get_Low_level_switch_state(int id)
+{
+ return(readDI(get_GPIO_PROT(id)));
+}
 
 
 

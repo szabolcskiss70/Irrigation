@@ -293,6 +293,5 @@ float measure_flowrate()
 
 int isLowLevelSwitchActive(int id)
 {
- return (get_GPIO_PROT(id));
-
+ return (get_Low_level_switch_state(id));
 }
